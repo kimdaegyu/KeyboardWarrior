@@ -1,0 +1,283 @@
+--!strict
+-- Reuses Studio-placed Workspace.Arena markers and keeps one ring of pads.
+
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local constants = require(ReplicatedStorage.Shared.IngameConstants)
+local MatchRules = require(ReplicatedStorage.Shared.MatchRules)
+
+local MATCH = constants.Match
+local ARENA = constants.Arena
+-- A floor disc is only a few tenths thick. Standing players are still "in the circle".
+local STAND_CLEARANCE = 8
+local PAD_THICKNESS = 1
+local LOBBY_RING_RADIUS = 3
+
+local ArenaService = {}
+
+local markers: {
+	arena: Folder,
+	center: BasePart,
+	join: BasePart,
+	lobby: BasePart,
+}? = nil
+local pads: {BasePart}? = nil
+
+local function describe(root: Instance): string
+	local names = {}
+	for _, child in root:GetDescendants() do
+		table.insert(names, child:GetFullName())
+	end
+	table.sort(names)
+	if #names == 0 then
+		return "(empty)"
+	end
+	return table.concat(names, ", ")
+end
+
+local function expect(arena: Instance, name: string, className: string): Instance
+	local inst = arena:FindFirstChild(name, true)
+	if inst == nil or not inst:IsA(className) then
+		error(
+			`[ArenaService] Workspace.Arena.{name} ({className}) is missing. Reuse the Studio object; descendants: {describe(arena)}`
+		)
+	end
+	return inst
+end
+
+local function resolveMarkers()
+	if markers ~= nil then
+		return markers
+	end
+	local arena = Workspace:WaitForChild("Arena", 10)
+	if arena == nil or not arena:IsA("Folder") then
+		error("[ArenaService] Workspace.Arena folder is missing. Place LobbySpawn, JoinZone, and ArenaCenter under it.")
+	end
+	local resolved = {
+		arena = arena,
+		center = expect(arena, "ArenaCenter", "BasePart") :: BasePart,
+		join = expect(arena, "JoinZone", "BasePart") :: BasePart,
+		lobby = expect(arena, "LobbySpawn", "SpawnLocation") :: BasePart,
+	}
+	markers = resolved
+	return resolved
+end
+
+function ArenaService.isInsideJoinZone(worldPosition: Vector3): boolean
+	local join = resolveMarkers().join
+	local localPosition = join.CFrame:PointToObjectSpace(worldPosition)
+	local size = join.Size
+	if join:IsA("Part") and join.Shape == Enum.PartType.Ball then
+		return (worldPosition - join.Position).Magnitude <= math.min(size.X, size.Y, size.Z) / 2
+	end
+	if join:IsA("Part") and join.Shape == Enum.PartType.Cylinder then
+		-- Cylinder axis is local X. A flat join disc stores its radius on Y/Z.
+		local radius = math.min(size.Y, size.Z) / 2
+		local planar = math.sqrt(localPosition.Y * localPosition.Y + localPosition.Z * localPosition.Z)
+		return planar <= radius and math.abs(localPosition.X) <= size.X / 2 + STAND_CLEARANCE
+	end
+	local axes = {
+		{ alignment = math.abs(join.CFrame.RightVector.Y), half = size.X / 2, coord = localPosition.X },
+		{ alignment = math.abs(join.CFrame.UpVector.Y), half = size.Y / 2, coord = localPosition.Y },
+		{ alignment = math.abs(join.CFrame.LookVector.Y), half = size.Z / 2, coord = localPosition.Z },
+	}
+	table.sort(axes, function(a, b)
+		return a.alignment > b.alignment
+	end)
+	local radius = math.min(axes[2].half, axes[3].half)
+	local planar = math.sqrt(axes[2].coord * axes[2].coord + axes[3].coord * axes[3].coord)
+	return planar <= radius and math.abs(axes[1].coord) <= axes[1].half + STAND_CLEARANCE
+end
+
+local function pivotCharacter(character: Model, target: CFrame)
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if root == nil or not root:IsA("BasePart") then
+		return
+	end
+	local player = Players:GetPlayerFromCharacter(character)
+	pcall(function()
+		root:SetNetworkOwner(nil)
+	end)
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+	character:PivotTo(target)
+	if player ~= nil then
+		task.delay(0.2, function()
+			if root.Parent == nil then
+				return
+			end
+			pcall(function()
+				root:SetNetworkOwner(player)
+			end)
+		end)
+	end
+end
+
+local function standCFrame(origin: CFrame, size: Vector3, character: Model, lookAt: Vector3?): CFrame?
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if humanoid == nil or root == nil or not root:IsA("BasePart") then
+		return nil
+	end
+	local floor = origin.Position.Y
+		+ math.abs(origin.RightVector.Y) * size.X / 2
+		+ math.abs(origin.UpVector.Y) * size.Y / 2
+		+ math.abs(origin.LookVector.Y) * size.Z / 2
+	local lift = humanoid.HipHeight
+	if lift < 0.5 then
+		lift = root.Size.Y / 2 + 2
+	end
+	local position = Vector3.new(origin.Position.X, floor + lift, origin.Position.Z)
+	local rotation = origin - origin.Position
+	if lookAt == nil then
+		return CFrame.new(position) * rotation
+	end
+	local focus = Vector3.new(lookAt.X, position.Y, lookAt.Z)
+	if (focus - position).Magnitude < 0.05 then
+		return CFrame.new(position)
+	end
+	return CFrame.lookAt(position, focus)
+end
+
+local function outsideJoin(preferred: Vector3): Vector3
+	if not ArenaService.isInsideJoinZone(preferred) then
+		return preferred
+	end
+	local join = resolveMarkers().join
+	local flat = Vector3.new(preferred.X - join.Position.X, 0, preferred.Z - join.Position.Z)
+	if flat.Magnitude < 0.1 then
+		flat = Vector3.new(0, 0, 1)
+	end
+	local pushed = join.Position + flat.Unit * (math.max(join.Size.X, join.Size.Y, join.Size.Z) / 2 + 4)
+	return Vector3.new(pushed.X, preferred.Y, pushed.Z)
+end
+
+function ArenaService.ensurePads(): {BasePart}
+	local found = resolveMarkers()
+	local existingFolder = found.arena:FindFirstChild("Pads")
+	local folder: Folder
+	if existingFolder ~= nil and existingFolder:IsA("Folder") then
+		folder = existingFolder
+	else
+		if existingFolder ~= nil then
+			existingFolder:Destroy()
+		end
+		folder = Instance.new("Folder")
+		folder.Name = "Pads"
+		folder.Parent = found.arena
+	end
+	local count = MATCH.MaxParticipants
+	local points = MatchRules.padPoints(count, ARENA.PadCenterRadius)
+	local nextPads: {BasePart} = table.create(count)
+	for index = 1, count do
+		local name = string.format("Pad%02d", index)
+		local existing = folder:FindFirstChild(name)
+		local pad: Part
+		if existing ~= nil and existing:IsA("Part") then
+			pad = existing
+		else
+			if existing ~= nil then
+				existing:Destroy()
+			end
+			pad = Instance.new("Part")
+			pad.Name = name
+			pad.Anchored = true
+			pad.CanCollide = true
+			pad.TopSurface = Enum.SurfaceType.Smooth
+			pad.BottomSurface = Enum.SurfaceType.Smooth
+			pad.Parent = folder
+			local billboard = Instance.new("BillboardGui")
+			billboard.Name = "Index"
+			billboard.Size = UDim2.fromOffset(36, 20)
+			billboard.StudsOffset = Vector3.new(0, 2.2, 0)
+			billboard.Parent = pad
+			local label = Instance.new("TextLabel")
+			label.BackgroundTransparency = 1
+			label.Size = UDim2.fromScale(1, 1)
+			label.Font = Enum.Font.GothamBold
+			label.Text = tostring(index)
+			label.TextColor3 = Color3.new(1, 1, 1)
+			label.TextScaled = true
+			label.Parent = billboard
+		end
+		pad.Shape = Enum.PartType.Cylinder
+		pad.Material = Enum.Material.Neon
+		pad.Color = Color3.fromRGB(126, 84, 255)
+		pad.Size = Vector3.new(PAD_THICKNESS, ARENA.PadDiameter, ARENA.PadDiameter)
+		local point = points[index]
+		local position = Vector3.new(
+			found.center.Position.X + point.x,
+			found.center.Position.Y + PAD_THICKNESS / 2,
+			found.center.Position.Z + point.z
+		)
+		-- Local X is the cylinder axis; roll it to world Y so the pad lies flat.
+		pad.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+		nextPads[index] = pad
+	end
+	for _, child in folder:GetChildren() do
+		if table.find(nextPads, child) == nil then
+			child:Destroy()
+		end
+	end
+	pads = nextPads
+	return nextPads
+end
+
+function ArenaService.padCount(): number
+	local current = pads
+	if current == nil then
+		return 0
+	end
+	local count = 0
+	for _, pad in ipairs(current) do
+		if pad.Parent ~= nil then
+			count += 1
+		end
+	end
+	return count
+end
+
+function ArenaService.placeOnPad(character: Model, padIndex: number)
+	local current = pads or ArenaService.ensurePads()
+	local pad = current[padIndex]
+	if pad == nil then
+		return
+	end
+	local frame = standCFrame(pad.CFrame, pad.Size, character, resolveMarkers().center.Position)
+	if frame ~= nil then
+		pivotCharacter(character, frame)
+	end
+end
+
+function ArenaService.placeInLobby(character: Model, slot: number, total: number)
+	local lobby = resolveMarkers().lobby
+	local offset = Vector3.zero
+	if total > 1 then
+		local angle = (slot - 1) / total * math.pi * 2
+		offset = Vector3.new(math.cos(angle) * LOBBY_RING_RADIUS, 0, math.sin(angle) * LOBBY_RING_RADIUS)
+	end
+	local parked = outsideJoin(lobby.Position + offset)
+	local origin = CFrame.new(parked) * (lobby.CFrame - lobby.CFrame.Position)
+	local frame = standCFrame(origin, lobby.Size, character, nil)
+	if frame ~= nil then
+		pivotCharacter(character, frame)
+	end
+end
+
+local announced = false
+
+function ArenaService.start()
+	local current = ArenaService.ensurePads()
+	if not announced then
+		announced = true
+		local found = resolveMarkers()
+		print(
+			`[KeyboardWarrior] Arena ready pads={#current} center={found.center.Position} joinSize={found.join.Size}`
+		)
+	end
+	return current
+end
+
+return ArenaService

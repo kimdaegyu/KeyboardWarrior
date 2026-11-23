@@ -1,0 +1,4 @@
+Id,Kind,GradeId,Score,Enabled,en,ko
+1,Word,Basic,10,1,apple,사과
+2,Word,Basic,10,1,star,별
+3,Sentence,Bright,25,1,we play together,우리는 함께 놀아요

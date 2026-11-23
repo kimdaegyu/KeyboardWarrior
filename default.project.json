@@ -1,0 +1,43 @@
+{
+  "name": "KeyboardWarrior",
+  "tree": {
+    "$className": "DataModel",
+    "$ignoreUnknownInstances": true,
+    "ReplicatedStorage": {
+      "$ignoreUnknownInstances": true,
+      "Shared": {
+        "$path": "src/ReplicatedStorage/Shared"
+      }
+    },
+    "ServerScriptService": {
+      "$ignoreUnknownInstances": true,
+      "Core": {
+        "$path": "src/ServerScriptService/Core"
+      }
+    },
+    "StarterPlayer": {
+      "$ignoreUnknownInstances": true,
+      "StarterPlayerScripts": {
+        "$ignoreUnknownInstances": true,
+        "KeyboardWarrior": {
+          "$path": "src/StarterPlayerScripts"
+        }
+      }
+    },
+    "LocalizationService": {
+      "$ignoreUnknownInstances": true,
+      "CoreStrings": {
+        "$path": "src/localization/CoreStrings.csv",
+        "$properties": {
+          "SourceLocaleId": "en-us"
+        }
+      }
+    },
+    "StarterGui": {
+      "$ignoreUnknownInstances": true,
+      "$properties": {
+        "ScreenOrientation": "LandscapeSensor"
+      }
+    }
+  }
+}

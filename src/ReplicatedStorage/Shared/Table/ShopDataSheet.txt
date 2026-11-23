@@ -1,0 +1,4 @@
+Id,Category,Currency,Price,PlatformProductId,Enabled
+starter_body,Body,Gold,0,,0
+starter_rim,Rim,Gold,0,,0
+starter_effect,Effect,Gold,0,,0

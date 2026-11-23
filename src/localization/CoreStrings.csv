@@ -1,0 +1,16 @@
+Key,Source,Context,Example,ko,ja,id,vi,th,hi,es,pt
+Common.Ready,Ready,,,준비 완료,準備完了,Siap,Sẵn sàng,พร้อม,तैयार,Listo,Pronto
+Common.Score,Score {score},,,점수 {score},スコア {score},Skor {score},Điểm {score},คะแนน {score},स्कोर {score},Puntuación {score},Pontuação {score}
+Lobby.Pending,Syncing,,,동기화 중,同期中,Menyinkronkan,Đang đồng bộ,กำลังซิงค์,सिंक हो रहा है,Sincronizando,Sincronizando
+Lobby.PhasePlay,Match,,,대결,対戦,Laga,Trận đấu,แข่ง,मैच,Partida,Partida
+Lobby.PhaseResult,Results,,,결산,結果,Hasil,Kết quả,สรุปผล,परिणाम,Resultados,Resultados
+Lobby.PhaseRest,Break,,,휴식,休憩,Istirahat,Nghỉ,พัก,विराम,Descanso,Pausa
+Lobby.Waiting,Waiting to join,,,참가 대기,参加待ち,Menunggu masuk,Đang chờ vào,รอเข้าร่วม,प्रवेश की प्रतीक्षा,Esperando entrar,Aguardando entrar
+Lobby.NotWaiting,Not waiting,,,대기 아님,待機なし,Tidak menunggu,Không chờ,ไม่ได้รอ,प्रतीक्षा में नहीं,Sin espera,Sem espera
+Lobby.Queue,Waiting {count}/{capacity},,,대기 인원 {count}/{capacity},待機 {count}/{capacity},Menunggu {count}/{capacity},Đang chờ {count}/{capacity},รอ {count}/{capacity},प्रतीक्षा {count}/{capacity},En espera {count}/{capacity},Na espera {count}/{capacity}
+Lobby.TimeLeft,Time left {time},,,남은 시간 {time},残り {time},Sisa {time},Còn {time},เหลือ {time},शेष {time},Tiempo {time},Tempo {time}
+Match.TypeHere,Type here,,,여기에 입력,ここに入力,Ketik di sini,Nhập tại đây,พิมพ์ที่นี่,यहाँ टाइप करें,Escribe aquí,Digite aqui
+Match.Space,Space,,,스페이스,スペース,Spasi,Cách,เว้นวรรค,स्पेस,Espacio,Espaço
+Match.Backspace,Backspace,,,지우기,削除,Hapus,Xóa,ลบ,मिटाएँ,Borrar,Apagar
+Match.Enter,Enter,,,입력,入力,Enter,Nhập,ยืนยัน,दर्ज,Enter,Enter
+Match.NoQuestion,No question,,,문제가 없습니다,問題がありません,Tidak ada soal,Không có câu hỏi,ไม่มีโจทย์,कोई प्रश्न नहीं,Sin pregunta,Sem pergunta

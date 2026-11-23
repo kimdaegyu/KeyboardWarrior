@@ -1,0 +1,4 @@
+Id,Gold,Exp
+Word,1,0
+Sentence,4,0
+Complete,50,10

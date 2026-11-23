@@ -1,0 +1,3 @@
+Id,ColorHex
+Basic,#6961BB
+Bright,#AA58D0

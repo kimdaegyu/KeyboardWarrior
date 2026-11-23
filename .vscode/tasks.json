@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "KeyboardWarrior: Verify",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "tools/verify.py"
+      ],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "KeyboardWarrior: Sync Excel",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "tools/sync_tables.py"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "KeyboardWarrior: Build icon atlas",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "tools/build_item_icons.py"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "KeyboardWarrior: Serve Lobby",
+      "type": "process",
+      "command": "rojo",
+      "args": [
+        "serve",
+        "default.project.json"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

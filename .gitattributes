@@ -1,0 +1,6 @@
+* text=auto
+*.xlsx binary
+*.rbxl binary
+*.png binary
+src/ReplicatedStorage/Shared/Table/*.txt -text
+*.luau text eol=lf
