@@ -2,3 +2,45 @@ Id,Kind,GradeId,Score,Enabled,en,ko
 1,Word,Basic,10,1,apple,사과
 2,Word,Basic,10,1,star,별
 3,Sentence,Bright,25,1,we play together,우리는 함께 놀아요
+book,Word,Basic,10,1,book,책
+like_rice,Sentence,Bright,25,1,i like rice,나는 밥을 좋아해
+moon,Word,Basic,10,1,moon,달
+big_moon,Sentence,Bright,25,1,the moon is big,달이 커요
+chicken,Word,Basic,10,1,chicken,닭
+read_book,Sentence,Bright,25,1,i read a book,나는 책을 읽어요
+bread,Word,Basic,10,1,bread,빵
+cats_run,Sentence,Bright,25,1,cats can run,고양이는 달려요
+rice,Word,Basic,10,1,rice,밥
+fish_water,Sentence,Bright,25,1,fish like water,물고기는 물을 좋아해
+milk,Word,Basic,10,1,milk,우유
+snow_falls,Sentence,Bright,25,1,snow falls down,눈이 내려요
+soup,Word,Basic,10,1,soup,국
+cold_wind,Sentence,Bright,25,1,the wind is cold,바람이 차가워요
+egg,Word,Basic,10,1,egg,달걀
+go_school,Sentence,Bright,25,1,i go to school,나는 학교에 가요
+cookie,Word,Basic,10,1,cookie,과자
+kick_ball,Sentence,Bright,25,1,we kick a ball,우리는 공을 차요
+cat,Word,Basic,10,1,cat,고양이
+wash_hands,Sentence,Bright,25,1,wash your hands,손을 씻어요
+dog,Word,Basic,10,1,dog,개
+drink_milk,Sentence,Bright,25,1,i drink milk,나는 우유를 마셔요
+fish,Word,Basic,10,1,fish,물고기
+kind_dog,Sentence,Bright,25,1,the dog is kind,개가 착해요
+sheep,Word,Basic,10,1,sheep,양
+open_book,Sentence,Bright,25,1,open your book,책을 펼쳐요
+bee,Word,Basic,10,1,bee,벌
+chickens_eat,Sentence,Bright,25,1,chickens eat rice,닭은 밥을 먹어요
+rain,Word,Basic,10,1,rain,비
+snow,Word,Basic,10,1,snow,눈
+cloud,Word,Basic,10,1,cloud,구름
+wind,Word,Basic,10,1,wind,바람
+pencil,Word,Basic,10,1,pencil,연필
+desk,Word,Basic,10,1,desk,책상
+school,Word,Basic,10,1,school,학교
+ball,Word,Basic,10,1,ball,공
+balloon,Word,Basic,10,1,balloon,풍선
+run,Word,Basic,10,1,run,달리다
+jump,Word,Basic,10,1,jump,뛰다
+read,Word,Basic,10,1,read,읽다
+sleep,Word,Basic,10,1,sleep,자다
+wash,Word,Basic,10,1,wash,씻다

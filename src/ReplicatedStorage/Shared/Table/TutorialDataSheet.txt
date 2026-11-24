@@ -1,0 +1,5 @@
+Id,SortOrder,TitleKey,BodyKey,Enabled
+join,1,Tutorial.JoinTitle,Tutorial.JoinBody,1
+typing,2,Tutorial.TypingTitle,Tutorial.TypingBody,1
+practice,3,Tutorial.PracticeTitle,Tutorial.PracticeBody,1
+shop,4,Tutorial.ShopTitle,Tutorial.ShopBody,1

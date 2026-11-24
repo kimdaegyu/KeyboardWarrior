@@ -28,7 +28,7 @@ New-Item -ItemType Directory -Force build | Out-Null
 rojo build default.project.json -o build/Lobby-Core.rbxl
 ```
 
-프로필 저장 어댑터는 제공되며 현재 시작 스크립트가 플레이어 데이터를 열거나 쓰지 않는다. Studio 실플레이, 실제 저장 왕복, 이미지 로딩 권한과 게시 설정의 서버 최대 인원 12명은 Studio 인수 항목이다.
+접속 시 PlayerStore로 프로필을 연다. 열기에 실패하면 기본값으로 덮어쓰지 않으며 Studio와 live 저장 범위는 분리되어 있다. Studio 실플레이, 실제 저장 왕복, 이미지 로딩 권한과 게시 설정의 서버 최대 인원 12명은 Studio 인수 항목이다.
 
 ## Cursor 및 Studio 검증
 
@@ -37,3 +37,14 @@ Cursor의 Run Task에서 KeyboardWarrior: Verify, Sync Excel, Build icon atlas, 
 ```luau
 require(game.ServerScriptService.Core.StudioSmoke)()
 ```
+
+### 정식 UI 리소스
+
+`FromGPT/*.png`는 모바일 가로 화면 시안 8장이다. 금액·점수는 화면 예시이며 실제 값은 게임 데이터를 따른다.
+
+| 용도 | 소스 | 빌드 | Roblox 이미지 ID 등록 |
+| --- | --- | --- | --- |
+| 숫자 ID 아이템 아이콘 | `assets/item-icons/source/<Id>.png` | `python tools/build_item_icons.py` | `ItemIconPages.luau`의 페이지 1 |
+| 이름 기반 UI 이미지 | `assets/ui-images/source/<이름>.png` | `python tools/build_ui_atlas.py` | `UIImageAssetIds.luau`의 `KeyboardWarriorUI` |
+
+두 등록 모듈은 `src/ReplicatedStorage/Shared`에 있다. 각 atlas 폴더의 PNG를 Roblox에 업로드하고 이미지 ID를 등록하면 해당 페이지를 조회할 수 있다. UI에는 `UIImageUtil.apply(image, "Shop")`처럼 대소문자를 구분한 파일명을 확장자 없이 전달한다. 발판 미리보기는 ShopDataSheet의 Id를 사용한다. 패널·키캡의 9-slice 좌표는 자동 생성된다. 흰 패널과 노란 버튼의 글자색은 남색(#172945), 파란 선택 버튼의 글자색은 흰색을 사용한다.

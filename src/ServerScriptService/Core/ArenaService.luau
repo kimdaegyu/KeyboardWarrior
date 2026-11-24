@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local MatchRules = require(ReplicatedStorage.Shared.MatchRules)
+local PadLook = require(ReplicatedStorage.Shared.PadLook)
 
 local MATCH = constants.Match
 local ARENA = constants.Arena
@@ -24,6 +25,7 @@ local markers: {
 	lobby: BasePart,
 }? = nil
 local pads: {BasePart}? = nil
+local dressed: {[number]: PadLook.Paint} = {}
 
 local function describe(root: Instance): string
 	local names = {}
@@ -203,8 +205,6 @@ function ArenaService.ensurePads(): {BasePart}
 			label.Parent = billboard
 		end
 		pad.Shape = Enum.PartType.Cylinder
-		pad.Material = Enum.Material.Neon
-		pad.Color = Color3.fromRGB(126, 84, 255)
 		pad.Size = Vector3.new(PAD_THICKNESS, ARENA.PadDiameter, ARENA.PadDiameter)
 		local point = points[index]
 		local position = Vector3.new(
@@ -214,6 +214,7 @@ function ArenaService.ensurePads(): {BasePart}
 		)
 		-- Local X is the cylinder axis; roll it to world Y so the pad lies flat.
 		pad.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+		PadLook.apply(pad, dressed[index] or PadLook.starter())
 		nextPads[index] = pad
 	end
 	for _, child in folder:GetChildren() do
@@ -237,6 +238,37 @@ function ArenaService.padCount(): number
 		end
 	end
 	return count
+end
+
+function ArenaService.dress(padIndex: number, paint: PadLook.Paint)
+	dressed[padIndex] = paint
+	local current = pads or ArenaService.ensurePads()
+	local pad = current[padIndex]
+	if pad ~= nil then
+		PadLook.apply(pad, paint)
+	end
+end
+
+function ArenaService.undress(padIndex: number)
+	dressed[padIndex] = nil
+	local current = pads
+	local pad = if current ~= nil then current[padIndex] else nil
+	if pad ~= nil then
+		PadLook.apply(pad, PadLook.starter())
+	end
+end
+
+function ArenaService.undressAll()
+	table.clear(dressed)
+	local current = pads
+	if current == nil then
+		return
+	end
+	for _, pad in current do
+		if pad.Parent ~= nil then
+			PadLook.apply(pad, PadLook.starter())
+		end
+	end
 end
 
 function ArenaService.placeOnPad(character: Model, padIndex: number)

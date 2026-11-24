@@ -14,3 +14,98 @@ Match.Space,Space,,,스페이스,スペース,Spasi,Cách,เว้นวรร�
 Match.Backspace,Backspace,,,지우기,削除,Hapus,Xóa,ลบ,मिटाएँ,Borrar,Apagar
 Match.Enter,Enter,,,입력,入力,Enter,Nhập,ยืนยัน,दर्ज,Enter,Enter
 Match.NoQuestion,No question,,,문제가 없습니다,問題がありません,Tidak ada soal,Không có câu hỏi,ไม่มีโจทย์,कोई प्रश्न नहीं,Sin pregunta,Sem pergunta
+Match.MyScore,Score {score},,,점수 {score},スコア {score},Skor {score},Điểm {score},คะแนน {score},स्कोर {score},Puntuación {score},Pontuação {score}
+Match.MyRank,Rank {rank},,,순위 {rank},順位 {rank},Peringkat {rank},Hạng {rank},อันดับ {rank},रैंक {rank},Puesto {rank},Posição {rank}
+Match.Points,+{points},,,+{points},+{points},+{points},+{points},+{points},+{points},+{points},+{points}
+Match.DoubleTime,2x,,,2배,2倍,2x,2x,2x,2x,2x,2x
+Match.Language,EN,,,EN,EN,EN,EN,EN,EN,EN,EN
+Match.RankTitle,Ranks,,,순위,順位,Peringkat,Hạng,อันดับ,रैंक,Puestos,Posições
+Match.ShowRanks,Show,,,열기,表示,Lihat,Hiện,แสดง,दिखाएँ,Ver,Ver
+Match.HideRanks,Hide,,,접기,閉じる,Tutup,Ẩn,ซ่อน,छिपाएँ,Ocultar,Ocultar
+Result.Place,{rank} / {count},,,{rank} / {count},{rank} / {count},{rank} / {count},{rank} / {count},{rank} / {count},{rank} / {count},{rank} / {count},{rank} / {count}
+Result.Score,Score {score},,,점수 {score},スコア {score},Skor {score},Điểm {score},คะแนน {score},स्कोर {score},Puntuación {score},Pontuação {score}
+Result.Language,Language {language},,,언어 {language},言語 {language},Bahasa {language},Ngôn ngữ {language},ภาษา {language},भाषा {language},Idioma {language},Idioma {language}
+Result.Gold,+{gold} Gold,,,+{gold} 골드,+{gold} ゴールド,+{gold} Emas,+{gold} Vàng,+{gold} ทอง,+{gold} सोना,+{gold} Oro,+{gold} Ouro
+Result.Exp,+{exp} EXP,,,+{exp} 경험치,+{exp} 経験値,+{exp} EXP,+{exp} EXP,+{exp} EXP,+{exp} EXP,+{exp} EXP,+{exp} EXP
+Result.Level,Level {level},,,레벨 {level},レベル {level},Level {level},Cấp {level},เลเวล {level},स्तर {level},Nivel {level},Nível {level}
+Result.ExpBar,{current} / {next},,,{current} / {next},{current} / {next},{current} / {next},{current} / {next},{current} / {next},{current} / {next},{current} / {next},{current} / {next}
+Result.ExpMax,{current},,,{current},{current},{current},{current},{current},{current},{current},{current}
+Result.LevelUnknown,—,,,—,—,—,—,—,—,—,—
+Result.Saving,Saving,,,저장 중,保存中,Menyimpan,Đang lưu,กำลังบันทึก,सहेजा जा रहा है,Guardando,Salvando
+Result.Saved,Saved,,,저장 완료,保存完了,Tersimpan,Đã lưu,บันทึกแล้ว,सहेजा गया,Guardado,Salvo
+Result.SaveFailed,Save failed,,,저장 실패,保存失敗,Gagal menyimpan,Lưu thất bại,บันทึกไม่สำเร็จ,सहेजना विफल,Error al guardar,Falha ao salvar
+Result.SaveUnavailable,Profile unavailable,,,프로필을 열지 못했습니다,プロフィールを開けません,Profil tidak tersedia,Không mở được hồ sơ,เปิดโปรไฟล์ไม่ได้,प्रोफ़ाइल उपलब्ध नहीं,Perfil no disponible,Perfil indisponível
+Result.Next,Next match soon,,,다음 경기까지 잠시,次の試合まで,Menunggu laga berikutnya,Trận sau sắp bắt đầu,รอรอบถัดไป,अगला मैच जल्द,Próxima partida pronto,Próxima partida em breve
+Practice.Start,Personal practice,,,개인 연습,個人練習,Latihan pribadi,Luyện cá nhân,ฝึกส่วนตัว,व्यक्तिगत अभ्यास,Práctica personal,Prática pessoal
+Practice.Outside,Practice is available outside the circle,,,원 밖에서 개인 연습할 수 있습니다,円の外で個人練習できます,Latihan tersedia di luar lingkaran,Có thể luyện ngoài vòng,ฝึกส่วนตัวได้นอกวง,घेरे के बाहर अभ्यास कर सकते हैं,Puedes practicar fuera del círculo,A prática fica fora do círculo
+Practice.Exit,Exit,,,나가기,出る,Keluar,Thoát,ออก,बाहर,Salir,Sair
+Practice.Words,Word practice,,,단어 연습,単語練習,Latihan kata,Luyện từ,ฝึกคำ,शब्द अभ्यास,Práctica de palabras,Prática de palavras
+Practice.Sentences,Sentence practice,,,문장 연습,文練習,Latihan kalimat,Luyện câu,ฝึกประโยค,वाक्य अभ्यास,Práctica de frases,Prática de frases
+Practice.Solved,Solved {count},,,맞힌 개수 {count},正解 {count},Benar {count},Đúng {count},ถูก {count},सही {count},Aciertos {count},Acertos {count}
+Practice.Empty,No questions in this mode,,,이 모드에는 문제가 없습니다,このモードに問題はありません,Tidak ada soal di mode ini,Chế độ này chưa có câu hỏi,โหมดนี้ยังไม่มีโจทย์,इस मोड में कोई प्रश्न नहीं,No hay preguntas en este modo,Não há perguntas neste modo
+Settings.Open,Settings,,,설정,設定,Pengaturan,Cài đặt,ตั้งค่า,सेटिंग,Ajustes,Ajustes
+Settings.Title,Settings,,,설정,設定,Pengaturan,Cài đặt,ตั้งค่า,सेटिंग,Ajustes,Ajustes
+Settings.UiLanguage,UI language,,,UI 언어,UI言語,Bahasa UI,Ngôn ngữ giao diện,ภาษา UI,UI भाषा,Idioma de la interfaz,Idioma da interface
+Settings.TypingLanguage,Typing language,,,타자 언어,入力言語,Bahasa ketik,Ngôn ngữ gõ,ภาษาพิมพ์,टाइपिंग भाषा,Idioma de escritura,Idioma de digitação
+Settings.TypingEnglish,English,,,영어,英語,Inggris,Tiếng Anh,อังกฤษ,अंग्रेज़ी,Inglés,Inglês
+Settings.Gloss,Meaning,,,문제 뜻,問題の意味,Arti soal,Nghĩa câu hỏi,ความหมายโจทย์,प्रश्न का अर्थ,Significado,Significado
+Settings.Auto,Automatic,,,자동,自動,Otomatis,Tự động,อัตโนมัติ,स्वचालित,Automático,Automático
+Settings.Korean,Korean,,,한국어,韓国語,Korea,Tiếng Hàn,เกาหลี,कोरियाई,Coreano,Coreano
+Settings.English,English,,,English,English,English,English,English,English,English,English
+Settings.GlossOff,Off,,,끔,オフ,Mati,Tắt,ปิด,बंद,Desactivado,Desligado
+Settings.GlossKorean,Korean,,,한국어,韓国語,Korea,Tiếng Hàn,เกาหลี,कोरियाई,Coreano,Coreano
+Settings.Apply,Apply,,,적용,適用,Terapkan,Áp dụng,ใช้,लागू करें,Aplicar,Aplicar
+Settings.Close,Close,,,닫기,閉じる,Tutup,Đóng,ปิด,बंद करें,Cerrar,Fechar
+Settings.Saving,Saving,,,저장 중,保存中,Menyimpan,Đang lưu,กำลังบันทึก,सहेजा जा रहा है,Guardando,Salvando
+Settings.Saved,Saved,,,저장 완료,保存完了,Tersimpan,Đã lưu,บันทึกแล้ว,सहेजा गया,Guardado,Salvo
+Settings.SaveFailed,Save failed,,,저장 실패,保存失敗,Gagal menyimpan,Lưu thất bại,บันทึกไม่สำเร็จ,सहेजना विफल,Error al guardar,Falha ao salvar
+Settings.Unavailable,Profile unavailable,,,프로필을 열지 못했습니다,プロフィールを開けません,Profil tidak tersedia,Không mở được hồ sơ,เปิดโปรไฟล์ไม่ได้,प्रोफ़ाइल उपलब्ध नहीं,Perfil no disponible,Perfil indisponível
+Settings.Back,Back,,,뒤로,戻る,Kembali,Quay lại,กลับ,वापस,Volver,Voltar
+Settings.TypingNote,Other typing languages are not available yet,,,다른 타자 언어는 아직 지원하지 않습니다,他の入力言語はまだ使えません,Bahasa ketik lain belum tersedia,Chưa hỗ trợ ngôn ngữ gõ khác,ยังไม่รองรับภาษาพิมพ์อื่น,अन्य टाइपिंग भाषाएँ अभी उपलब्ध नहीं हैं,Otros idiomas de escritura aún no están disponibles,Outros idiomas de digitação ainda não estão disponíveis
+Settings.TypingMobile,This device plays in English. The saved typing language stays.,,,이 기기에서는 영어로 플레이합니다. 저장한 타자 언어는 유지됩니다.,この端末では英語でプレイします。保存した入力言語はそのままです。,Perangkat ini bermain dalam bahasa Inggris. Bahasa ketik yang disimpan tetap ada.,Thiết bị này chơi bằng tiếng Anh. Ngôn ngữ gõ đã lưu được giữ nguyên.,อุปกรณ์นี้เล่นเป็นภาษาอังกฤษ ภาษาพิมพ์ที่บันทึกไว้ยังอยู่,यह डिवाइस अंग्रेज़ी में खेलता है। सहेजी टाइपिंग भाषा रहती है।,Este dispositivo juega en inglés. El idioma de escritura guardado se mantiene.,Este dispositivo joga em inglês. O idioma de digitação salvo permanece.
+Tutorial.JoinTitle,Join a match,,,대결 참가,,,,,,,
+Tutorial.JoinBody,Wait inside the yellow circle. When the next match starts you move to your pad. Leaving the circle before the start cancels your entry.,,,노란 원 안에서 기다리세요. 다음 대결이 시작되면 내 발판으로 이동해요. 시작 전에 원 밖으로 나오면 참가가 취소돼요.,,,,,,,
+Tutorial.TypingTitle,Typing and score,,,타자와 점수,,,,,,,
+Tutorial.TypingBody,Type the word or sentence on the screen. Finishing it brings the next one. A question dealt during the last {seconds} seconds scores {multiplier} times.,,,화면의 단어나 문장을 그대로 입력하세요. 정답을 완성하면 다음 문제가 나와요. 마지막 {seconds}초에 새로 받은 문제는 점수가 {multiplier}배예요.,,,,,,,
+Tutorial.PracticeTitle,Practice,,,개인 연습,,,,,,,
+Tutorial.PracticeBody,To practice without waiting press Practice outside the yellow circle. You can practice words and sentences as long as you like. Practice awards no gold or experience.,,,기다리지 않고 연습하려면 노란 원 밖에서 개인 연습을 누르세요. 단어와 문장을 원하는 만큼 연습할 수 있어요. 연습에는 골드·경험치 보상이 없어요.,,,,,,,
+Tutorial.ShopTitle,Customize your pad,,,발판 꾸미기,,,,,,,
+Tutorial.ShopBody,Preview and equip a pad body and rim and effect in the shop.,,,상점에서 발판 본체·테두리·이펙트를 미리 보고 장착해요.,,,,,,,
+Tutorial.Previous,Previous,,,이전,,,,,,,
+Tutorial.Next,Next,,,다음,,,,,,,
+Tutorial.Done,Done,,,완료,,,,,,,
+Tutorial.Skip,Skip,,,건너뛰기,,,,,,,
+Tutorial.Replay,Replay tutorial,,,튜토리얼 다시 보기,,,,,,,
+Rank.Open,Global rank,,,전체 랭크,,,,,,,
+Rank.Title,Global rank,,,전체 랭크,,,,,,,
+Rank.Mine,Best score {score},,,내 최고 점수 {score},,,,,,,
+Rank.None,No record yet,,,아직 기록이 없습니다,,,,,,,
+Rank.Empty,No finished scores on the board,,,표시할 순위가 없습니다,,,,,,,
+Rank.Loading,Loading ranks,,,순위를 불러오는 중,,,,,,,
+Rank.Failed,Could not load ranks,,,순위를 불러오지 못했습니다,,,,,,,
+Rank.Stale,Rank refresh is delayed,,,순위 갱신이 지연되고 있습니다,,,,,,,
+Rank.Place,Rank,,,순위,,,,,,,
+Rank.Player,Player,,,플레이어,,,,,,,
+Rank.Score,Best score,,,최고 점수,,,,,,,
+Rank.Close,Close,,,닫기,,,,,,,
+Shop.Open,Shop,,,상점,,,,,,,
+Shop.Title,Shop,,,상점,,,,,,,
+Shop.Gold,Gold {gold},,,골드 {gold},,,,,,,
+Shop.TabBody,Pad body,,,발판 본체,,,,,,,
+Shop.TabRim,Pad rim,,,발판 테두리,,,,,,,
+Shop.TabEffect,Pad effect,,,발판 이펙트,,,,,,,
+Shop.Buy,Buy · {price} gold,,,구매 · {price} 골드,,,,,,,
+Shop.Equip,Equip,,,장착,,,,,,,
+Shop.Equipped,Equipped,,,장착 중,,,,,,,
+Shop.Close,Close,,,닫기,,,,,,,
+Shop.Loading,Loading the shop,,,상점을 불러오는 중,,,,,,,
+Shop.Processing,Working,,,처리 중,,,,,,,
+Shop.Funds,Not enough gold,,,골드가 부족합니다,,,,,,,
+Shop.Closed,Not for sale,,,지금은 판매하지 않습니다,,,,,,,
+Shop.Unavailable,Profile unavailable,,,프로필을 열지 못했습니다,,,,,,,
+Shop.Name.starter_body,Basic pad,,,기본 발판,,,,,,,
+Shop.Name.starter_rim,Basic rim,,,기본 테두리,,,,,,,
+Shop.Name.starter_effect,Basic effect,,,기본 이펙트,,,,,,,
+Shop.Name.pilot_body,Neon cyan,,,네온 청록,,,,,,,
+Shop.Name.pilot_rim,Gold ring,,,골드 링,,,,,,,
+Shop.Name.pilot_effect,Sparkles,,,반짝임,,,,,,,

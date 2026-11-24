@@ -2,7 +2,6 @@
 -- Shared typing screen. The physical keyboard and the touch keys share one buffer.
 -- English mode consumes Latin keys so an OS keyboard and Hangul composition never enter the buffer.
 
-local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -13,23 +12,10 @@ local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local Localization = require(ReplicatedStorage.Shared.Localization)
 local QuestionRules = require(ReplicatedStorage.Shared.QuestionRules)
 local TypingLayout = require(ReplicatedStorage.Shared.TypingLayout)
-local UIImageUtil = require(ReplicatedStorage.Shared.UIImageUtil)
-
-local ACTION = "KeyboardWarriorTyping"
-local KEY_PRIORITY = 4000
-
-local LETTER_ROWS = {
-	{ "q", "w", "e", "r", "t", "y", "u", "i", "o", "p" },
-	{ "a", "s", "d", "f", "g", "h", "j", "k", "l" },
-	{ "z", "x", "c", "v", "b", "n", "m" },
-}
-
-local KEY_CHARS: {[Enum.KeyCode]: string} = {}
-for _, row in LETTER_ROWS do
-	for _, letter in row do
-		KEY_CHARS[Enum.KeyCode[string.upper(letter)]] = letter
-	end
-end
+local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
+local MatchCamera = require(script.Parent.MatchCamera)
+local SettingsState = require(script.Parent.SettingsState)
+local TypingPad = require(script.Parent.TypingPad)
 
 local TypingScreen = {}
 
@@ -40,38 +26,23 @@ local function formatTime(seconds: number): string
 	return string.format("%d:%02d", minutes, remainder)
 end
 
-local function makeButton(parent: Frame, name: string, text: string, color: Color3): TextButton
-	local button = Instance.new("TextButton")
-	button.Name = name
-	button.Text = text
-	button.Font = Enum.Font.GothamMedium
-	button.TextColor3 = Color3.new(1, 1, 1)
-	button.BackgroundColor3 = color
-	button.BorderSizePixel = 0
-	button.AutoButtonColor = true
-	button.TextTruncate = Enum.TextTruncate.AtEnd
-	button.ZIndex = 6
-	button.Parent = parent
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
-	corner.Parent = button
-	return button
-end
-
 function TypingScreen.bind(root: Frame): () -> ()
 	local request = ReplicatedStorage:WaitForChild("QuestionRequest")
 	local submit = ReplicatedStorage:WaitForChild("QuestionSubmit")
 	local feedback = ReplicatedStorage:WaitForChild("QuestionFeedback")
+	local scoreRequest = ReplicatedStorage:WaitForChild("ScoreRequest")
+	local scoreState = ReplicatedStorage:WaitForChild("ScoreState")
 	assert(request:IsA("RemoteEvent") and submit:IsA("RemoteEvent") and feedback:IsA("RemoteEvent"))
+	assert(scoreRequest:IsA("RemoteEvent") and scoreState:IsA("RemoteEvent"))
 
 	local screen = Instance.new("Frame")
 	screen.Name = "TypingScreen"
 	screen.Size = UDim2.fromScale(1, 1)
 	screen.BackgroundColor3 = Color3.fromRGB(12, 8, 24)
-	screen.BackgroundTransparency = 0.35
+	screen.BackgroundTransparency = 1
 	screen.BorderSizePixel = 0
 	screen.Visible = false
-	screen.Active = true
+	screen.Active = false
 	screen.ZIndex = 4
 	screen.Parent = root
 
@@ -83,26 +54,51 @@ function TypingScreen.bind(root: Frame): () -> ()
 
 	local timeLabel = Instance.new("TextLabel")
 	timeLabel.Name = "Time"
-	timeLabel.BackgroundTransparency = 1
+	timeLabel.BackgroundColor3 = UiChrome.White
+	timeLabel.BackgroundTransparency = 0.1
 	timeLabel.Font = Enum.Font.GothamMedium
-	timeLabel.TextColor3 = Color3.fromRGB(90, 230, 255)
+	timeLabel.TextColor3 = UiChrome.Navy
 	timeLabel.TextXAlignment = Enum.TextXAlignment.Center
 	timeLabel.TextYAlignment = Enum.TextYAlignment.Center
 	timeLabel.Text = ""
+	timeLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	timeLabel.ZIndex = 6
 	timeLabel.Parent = column
 
+	local scoreLabel = Instance.new("TextLabel")
+	scoreLabel.Name = "MyScore"
+	scoreLabel.BackgroundColor3 = UiChrome.White
+	scoreLabel.BackgroundTransparency = 0.1
+	scoreLabel.Font = Enum.Font.GothamMedium
+	scoreLabel.TextColor3 = UiChrome.Navy
+	scoreLabel.TextXAlignment = Enum.TextXAlignment.Center
+	scoreLabel.TextYAlignment = Enum.TextYAlignment.Center
+	scoreLabel.Text = ""
+	scoreLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	scoreLabel.ZIndex = 6
+	scoreLabel.Parent = column
+
+	local rankButton = Instance.new("TextButton")
+	rankButton.Name = "MyRank"
+	rankButton.BackgroundColor3 = UiChrome.White
+	rankButton.BackgroundTransparency = 0.1
+	rankButton.AutoButtonColor = false
+	rankButton.Font = Enum.Font.GothamMedium
+	rankButton.TextColor3 = UiChrome.Navy
+	rankButton.TextXAlignment = Enum.TextXAlignment.Center
+	rankButton.TextYAlignment = Enum.TextYAlignment.Center
+	rankButton.Text = ""
+	rankButton.TextTruncate = Enum.TextTruncate.AtEnd
+	rankButton.ZIndex = 6
+	rankButton.Parent = column
+
 	local questionPanel = Instance.new("ImageLabel")
 	questionPanel.Name = "Question"
-	questionPanel.BackgroundColor3 = Color3.fromRGB(40, 20, 70)
+	questionPanel.BackgroundColor3 = UiChrome.White
 	questionPanel.BorderSizePixel = 0
 	questionPanel.ZIndex = 6
 	questionPanel.Parent = column
-	if UIImageUtil.apply(questionPanel, "panel-9slice") then
-		questionPanel.BackgroundTransparency = 1
-	else
-		questionPanel.BackgroundTransparency = 0.15
-	end
+	UiChrome.paint(questionPanel, "panel")
 
 	local questionText = Instance.new("TextLabel")
 	questionText.Name = "PromptText"
@@ -110,7 +106,7 @@ function TypingScreen.bind(root: Frame): () -> ()
 	questionText.Position = UDim2.fromOffset(8, 6)
 	questionText.Size = UDim2.new(1, -16, 1, -12)
 	questionText.Font = Enum.Font.GothamMedium
-	questionText.TextColor3 = Color3.new(1, 1, 1)
+	questionText.TextColor3 = UiChrome.Navy
 	questionText.TextWrapped = true
 	questionText.TextXAlignment = Enum.TextXAlignment.Center
 	questionText.TextYAlignment = Enum.TextYAlignment.Center
@@ -118,9 +114,64 @@ function TypingScreen.bind(root: Frame): () -> ()
 	questionText.ZIndex = 7
 	questionText.Parent = questionPanel
 
+	local glossLabel = Instance.new("TextLabel")
+	glossLabel.Name = "Gloss"
+	glossLabel.BackgroundTransparency = 1
+	glossLabel.Font = Enum.Font.Gotham
+	glossLabel.TextColor3 = UiChrome.Navy
+	glossLabel.TextWrapped = true
+	glossLabel.TextXAlignment = Enum.TextXAlignment.Center
+	glossLabel.TextYAlignment = Enum.TextYAlignment.Center
+	glossLabel.Text = ""
+	glossLabel.Visible = false
+	glossLabel.ZIndex = 7
+	glossLabel.Parent = questionPanel
+
+	local pointsLabel = Instance.new("TextLabel")
+	pointsLabel.Name = "Points"
+	pointsLabel.BackgroundTransparency = 1
+	pointsLabel.Font = Enum.Font.GothamBold
+	pointsLabel.TextColor3 = Color3.fromRGB(255, 214, 102)
+	pointsLabel.TextXAlignment = Enum.TextXAlignment.Right
+	pointsLabel.TextYAlignment = Enum.TextYAlignment.Top
+	pointsLabel.Text = ""
+	pointsLabel.ZIndex = 8
+	pointsLabel.Parent = questionPanel
+
+	local rankPanel = Instance.new("ImageLabel")
+	rankPanel.Name = "Ranks"
+	rankPanel.BackgroundColor3 = UiChrome.White
+	rankPanel.BorderSizePixel = 0
+	rankPanel.ZIndex = 6
+	rankPanel.Visible = false
+	rankPanel.Parent = screen
+	UiChrome.paint(rankPanel, "panel")
+
+	local rankTitle = Instance.new("TextLabel")
+	rankTitle.Name = "Title"
+	rankTitle.BackgroundTransparency = 1
+	rankTitle.Font = Enum.Font.GothamBold
+	rankTitle.TextColor3 = UiChrome.Navy
+	rankTitle.TextXAlignment = Enum.TextXAlignment.Left
+	rankTitle.TextYAlignment = Enum.TextYAlignment.Center
+	rankTitle.Text = ""
+	rankTitle.ZIndex = 8
+	rankTitle.Parent = rankPanel
+
+	local rankList = Instance.new("ScrollingFrame")
+	rankList.Name = "Rows"
+	rankList.BackgroundTransparency = 1
+	rankList.BorderSizePixel = 0
+	rankList.ScrollBarThickness = 4
+	rankList.ScrollingDirection = Enum.ScrollingDirection.Y
+	rankList.CanvasSize = UDim2.new()
+	rankList.ZIndex = 7
+	rankList.Parent = rankPanel
+
 	local inputLabel = Instance.new("TextLabel")
 	inputLabel.Name = "Input"
-	inputLabel.BackgroundTransparency = 1
+	inputLabel.BackgroundColor3 = UiChrome.White
+	inputLabel.BackgroundTransparency = 0.05
 	inputLabel.Font = Enum.Font.GothamMedium
 	inputLabel.TextXAlignment = Enum.TextXAlignment.Center
 	inputLabel.TextYAlignment = Enum.TextYAlignment.Center
@@ -129,36 +180,37 @@ function TypingScreen.bind(root: Frame): () -> ()
 	inputLabel.ZIndex = 6
 	inputLabel.Parent = column
 
-	-- The default camera and Studio shortcuts sink I and O before a context action.
-	-- A focused box still receives those characters. Touch mode never focuses it, so the OS keyboard stays hidden.
-	local hardware = Instance.new("TextBox")
-	hardware.Name = "HardwareInput"
-	hardware.Size = UDim2.fromOffset(1, 1)
-	hardware.Position = UDim2.fromOffset(-40, -40)
-	hardware.BackgroundTransparency = 1
-	hardware.TextTransparency = 1
-	hardware.TextSize = 1
-	hardware.ClearTextOnFocus = false
-	hardware.MultiLine = false
-	hardware.TextEditable = true
-	hardware.Text = ""
-	hardware.ZIndex = 1
-	hardware.Parent = screen
-
-	local keyboard = Instance.new("Frame")
-	keyboard.Name = "Keyboard"
-	keyboard.BackgroundTransparency = 1
-	keyboard.Visible = false
-	keyboard.ZIndex = 5
-	keyboard.Parent = screen
-
 	local session: QuestionRules.ClientSession? = nil
 	local buffer = ""
 	local locked = false
+	local echo = ""
+	local sentMark = ""
 	local open = false
-	local keysBound = false
 	local trackingId = 0
 	local lastReason: string? = nil
+	local standings: {QuestionRules.Standing} = {}
+	local rankNames: {[number]: string} = {}
+	local rankLanguages: {[number]: string} = {}
+	local lastPlayId = 0
+	local ranksOpen = false
+	local drawer = false
+	local lastQuestionHeight = 0
+	local lastTextSize = 28
+
+	local function layoutGloss(questionHeight: number, textSize: number)
+		lastQuestionHeight = questionHeight
+		lastTextSize = textSize
+		local gloss = if session ~= nil then SettingsState.glossText(session.questionId) else ""
+		glossLabel.Text = gloss
+		local band = TypingLayout.glossBand(questionHeight, gloss ~= "")
+		glossLabel.Visible = band > 0
+		glossLabel.Position = UDim2.new(0, 8, 1, -band - 3)
+		glossLabel.Size = UDim2.new(1, -16, 0, math.max(0, band - 2))
+		glossLabel.TextSize = math.clamp(textSize - 8, 12, 18)
+		questionText.Size = UDim2.new(1, -88, 1, -(11 + band))
+		questionText.TextSize = if band > 0 then math.clamp(math.floor((questionHeight - band) * 0.42), 14, 28) else textSize
+	end
+	local rankRows: {TextLabel} = {}
 
 	local function activeMatchId(): number
 		local folder = ReplicatedStorage:FindFirstChild("MatchState")
@@ -171,6 +223,73 @@ function TypingScreen.bind(root: Frame): () -> ()
 		)
 	end
 
+	local function colorFromHex(hex: string): Color3
+		local digits = string.match(hex, "^#(%x%x%x%x%x%x)$")
+		local value = if digits ~= nil then tonumber(digits, 16) else nil
+		if value == nil then
+			return Color3.fromRGB(255, 255, 255)
+		end
+		return Color3.fromRGB(math.floor(value / 65536) % 256, math.floor(value / 256) % 256, value % 256)
+	end
+
+	local function mine(): QuestionRules.Standing?
+		local userId = Players.LocalPlayer.UserId
+		for _, row in standings do
+			if row.userId == userId then
+				return row
+			end
+		end
+		return nil
+	end
+
+	local function ensureRankRow(index: number): TextLabel
+		local existing = rankRows[index]
+		if existing ~= nil then
+			return existing
+		end
+		local row = Instance.new("TextLabel")
+		row.BackgroundTransparency = 1
+		row.Font = Enum.Font.GothamMedium
+		row.TextXAlignment = Enum.TextXAlignment.Left
+		row.TextYAlignment = Enum.TextYAlignment.Center
+		row.TextTruncate = Enum.TextTruncate.AtEnd
+		row.ZIndex = 8
+		row.Parent = rankList
+		rankRows[index] = row
+		return row
+	end
+
+	local function renderBoard()
+		local rows = standings
+		if drawer then
+			rows = QuestionRules.visibleRanks(standings, Players.LocalPlayer.UserId, 5)
+		end
+		local shown = if rankPanel.Visible then #rows else 0
+		for index = 1, math.max(shown, #rankRows) do
+			local row = rows[index]
+			local label = rankRows[index]
+			if row ~= nil and label == nil then
+				label = ensureRankRow(index)
+			end
+			if label ~= nil then
+				label.Visible = row ~= nil and rankPanel.Visible
+				if row ~= nil then
+					local displayName = rankNames[row.userId] or tostring(row.userId)
+					local language = rankLanguages[row.userId] or Localization.getText("Match.Language")
+					label.Text = `{row.rank}  {displayName}  {language}  {row.score}`
+					local mineRow = row.userId == Players.LocalPlayer.UserId
+					label.BackgroundColor3 = if mineRow then UiChrome.Blue else UiChrome.White
+					label.BackgroundTransparency = if mineRow then 0 else 1
+					label.TextColor3 = if mineRow then UiChrome.White else UiChrome.Navy
+					label.TextSize = 14
+					label.Size = UDim2.new(1, -12, 0, 22)
+					label.Position = UDim2.fromOffset(8, (index - 1) * 24)
+				end
+			end
+		end
+		rankList.CanvasSize = UDim2.fromOffset(0, math.max(shown, 1) * 24)
+	end
+
 	local function render()
 		local folder = ReplicatedStorage:FindFirstChild("MatchState")
 		local endsAt = if folder ~= nil then folder:GetAttribute("PhaseEndsAt") else nil
@@ -178,219 +297,128 @@ function TypingScreen.bind(root: Frame): () -> ()
 		if type(endsAt) == "number" then
 			remain = math.max(0, endsAt - Workspace:GetServerTimeNow())
 		end
-		timeLabel.Text = Localization.getText("Lobby.TimeLeft", nil, { time = formatTime(remain) })
-		if session ~= nil then
+		local timeText = Localization.getText("Lobby.TimeLeft", nil, { time = formatTime(remain) })
+		if remain > 0 and remain <= constants.Match.DoubleScoreSeconds then
+			timeText ..= " " .. Localization.getText("Match.DoubleTime")
+		end
+		timeLabel.Text = timeText
+		local self = mine()
+		local total = if self ~= nil then self.score else (if session ~= nil then session.total else 0)
+		local rankText = if self ~= nil then tostring(self.rank) else "-"
+		scoreLabel.Text = Localization.getText("Match.MyScore", nil, { score = tostring(total) })
+		local rankLine = Localization.getText("Match.MyRank", nil, { rank = rankText })
+		if drawer then
+			local toggle = if ranksOpen then Localization.getText("Match.HideRanks") else Localization.getText("Match.ShowRanks")
+			rankLine ..= " " .. toggle
+		end
+		rankButton.Text = rankLine
+		rankTitle.Text = Localization.getText("Match.RankTitle")
+		rankTitle.Visible = rankPanel.Visible and not drawer
+		if session ~= nil and session.text ~= "" then
 			questionText.Text = session.text
+			pointsLabel.Text = Localization.getText("Match.Points", nil, { points = tostring(session.points) })
+			pointsLabel.TextColor3 = colorFromHex(session.colorHex)
+			questionPanel.ImageColor3 = Color3.new(1, 1, 1)
+			questionPanel.BackgroundColor3 = UiChrome.White
+			inputLabel.Text = if buffer == "" then Localization.getText("Match.TypeHere") else buffer
+			inputLabel.TextTransparency = if buffer == "" then 0.35 else 0
+			inputLabel.TextColor3 = UiChrome.Navy
 		elseif lastReason == "closed" then
 			questionText.Text = Localization.getText("Match.NoQuestion")
+			pointsLabel.Text = ""
+			questionPanel.ImageColor3 = Color3.new(1, 1, 1)
+			questionPanel.BackgroundColor3 = UiChrome.White
+			inputLabel.Text = ""
 		else
 			questionText.Text = ""
+			pointsLabel.Text = ""
+			questionPanel.ImageColor3 = Color3.new(1, 1, 1)
+			questionPanel.BackgroundColor3 = UiChrome.White
+			inputLabel.Text = if buffer == "" then Localization.getText("Match.TypeHere") else buffer
+			inputLabel.TextColor3 = UiChrome.Navy
+			inputLabel.TextTransparency = if buffer == "" then 0.35 else 0
 		end
-		if buffer == "" then
-			inputLabel.Text = Localization.getText("Match.TypeHere")
-			inputLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
-		else
-			inputLabel.Text = buffer
-			inputLabel.TextColor3 = Color3.fromRGB(120, 255, 255)
+		if lastQuestionHeight > 0 then
+			layoutGloss(lastQuestionHeight, lastTextSize)
 		end
+		renderBoard()
 	end
 
-	local mirroring = false
+	local setDraft: (string) -> ()
+	local submitEnter: () -> ()
+	local pad = TypingPad.mount(screen, "KeyboardWarriorTyping", function(text: string)
+		setDraft(text)
+	end, function()
+		submitEnter()
+	end)
 
 	local function send()
 		local current = session
-		if current == nil then
+		if current == nil or buffer == "" then
 			return
 		end
-		submit:FireServer(current.matchId, current.issue, buffer)
+		local mark = tostring(current.issue) .. "\0" .. buffer
+		if mark == sentMark then
+			return
+		end
+		sentMark = mark
+		local payload = buffer
+		local method = pad:inputMethod()
+		local answering = current.text ~= "" and QuestionRules.matches(buffer, current.text)
+		if answering then
+			echo = payload
+			buffer = ""
+			locked = false
+			pad:settleField(payload)
+			pad:composeSettled()
+			pad:setText("")
+		end
+		submit:FireServer(current.matchId, current.issue, payload, method)
 	end
 
-	local function pushHardware(text: string)
-		if hardware.Text == text then
-			return
+	local function echoBlocks(nextText: string): boolean
+		local current = session
+		if echo == "" or nextText ~= echo or current == nil then
+			return false
 		end
-		mirroring = true
-		hardware.Text = text
-		mirroring = false
+		local completing = current.text == echo
+			and buffer ~= ""
+			and buffer ~= echo
+			and string.sub(echo, 1, #buffer) == buffer
+			and sentMark ~= tostring(current.issue) .. "\0" .. echo
+		return not completing
 	end
 
-	local function setDraft(nextText: string)
-		if not open or locked or session == nil then
-			pushHardware(buffer)
+	function setDraft(nextText: string)
+		if not open or session == nil then
+			pad:setText(buffer)
 			return
 		end
-		if #nextText > QuestionRules.MaxInputLength then
-			nextText = string.sub(nextText, 1, QuestionRules.MaxInputLength)
+		nextText = QuestionRules.clip(nextText, QuestionRules.MaxInputLength)
+		if echoBlocks(nextText) then
+			pad:setText(buffer)
+			return
 		end
 		if nextText == buffer then
-			pushHardware(buffer)
+			pad:setText(buffer)
 			return
 		end
 		buffer = nextText
-		pushHardware(buffer)
+		pad:setText(buffer)
 		render()
 		local current = session
-		if current ~= nil and current.text ~= "" and QuestionRules.matches(buffer, current.text) then
-			locked = true
+		if current ~= nil and QuestionRules.autoSubmits(current.typing) and current.text ~= "" and QuestionRules.matches(buffer, current.text) then
 			send()
+			render()
 		end
 	end
 
-	local function append(char: string)
-		setDraft(buffer .. char)
-	end
-
-	local function backspace()
-		if buffer == "" then
+	function submitEnter()
+		if not open or session == nil or not QuestionRules.acceptEnter(locked, buffer) then
 			return
-		end
-		setDraft(string.sub(buffer, 1, #buffer - 1))
-	end
-
-	local function submitEnter()
-		if not open or session == nil then
-			return
-		end
-		local current = session
-		if current.text ~= "" and QuestionRules.matches(buffer, current.text) then
-			locked = true
 		end
 		send()
-	end
-
-	hardware:GetPropertyChangedSignal("Text"):Connect(function()
-		if mirroring or not hardware:IsFocused() then
-			return
-		end
-		setDraft(hardware.Text)
-	end)
-
-	local function captureHardware()
-		if UserInputService.TouchEnabled then
-			return
-		end
-		if not open then
-			return
-		end
-		hardware:CaptureFocus()
-		local caret = #hardware.Text + 1
-		hardware.CursorPosition = caret
-		hardware.SelectionStart = caret
-	end
-
-	local function releaseHardware()
-		if hardware:IsFocused() then
-			hardware:ReleaseFocus()
-		end
-	end
-
-	hardware.FocusLost:Connect(function(enterPressed: boolean)
-		if not open or UserInputService.TouchEnabled then
-			return
-		end
-		if enterPressed then
-			submitEnter()
-		end
-		task.defer(captureHardware)
-	end)
-
-	local function onAction(_name: string, state: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
-		if not open then
-			return Enum.ContextActionResult.Pass
-		end
-		if state ~= Enum.UserInputState.Begin then
-			return Enum.ContextActionResult.Sink
-		end
-		local key = input.KeyCode
-		if key == Enum.KeyCode.Backspace then
-			backspace()
-		elseif key == Enum.KeyCode.Return or key == Enum.KeyCode.KeypadEnter then
-			submitEnter()
-		elseif key == Enum.KeyCode.Space then
-			append(" ")
-		else
-			local char = KEY_CHARS[key]
-			if char ~= nil then
-				local upper = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-					or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-					or UserInputService:IsKeyDown(Enum.KeyCode.CapsLock)
-				append(if upper then string.upper(char) else char)
-			end
-		end
-		return Enum.ContextActionResult.Sink
-	end
-
-	local keyCodes = {}
-	for key in KEY_CHARS do
-		table.insert(keyCodes, key)
-	end
-	table.insert(keyCodes, Enum.KeyCode.Space)
-	table.insert(keyCodes, Enum.KeyCode.Backspace)
-	table.insert(keyCodes, Enum.KeyCode.Return)
-	table.insert(keyCodes, Enum.KeyCode.KeypadEnter)
-
-	local function bindKeys()
-		if keysBound then
-			return
-		end
-		keysBound = true
-		if UserInputService.TouchEnabled then
-			ContextActionService:BindActionAtPriority(ACTION, onAction, false, KEY_PRIORITY, table.unpack(keyCodes))
-			return
-		end
-		task.defer(captureHardware)
-	end
-
-	local function unbindKeys()
-		if not keysBound then
-			return
-		end
-		keysBound = false
-		ContextActionService:UnbindAction(ACTION)
-		releaseHardware()
-	end
-
-	local rowButtons: {{TextButton}} = {}
-	local rowWeights: {{number}?} = {}
-	local letterColor = Color3.fromRGB(32, 18, 54)
-	for index, letters in LETTER_ROWS do
-		local row = Instance.new("Frame")
-		row.Name = "Letters" .. index
-		row.BackgroundTransparency = 1
-		row.ZIndex = 5
-		row.Parent = keyboard
-		local buttons = {}
-		for _, letter in letters do
-			local button = makeButton(row, string.upper(letter), string.upper(letter), letterColor)
-			button.Activated:Connect(function()
-				append(letter)
-			end)
-			table.insert(buttons, button)
-		end
-		rowButtons[index] = buttons
-		rowWeights[index] = nil
-	end
-
-	local actionRow = Instance.new("Frame")
-	actionRow.Name = "Actions"
-	actionRow.BackgroundTransparency = 1
-	actionRow.ZIndex = 5
-	actionRow.Parent = keyboard
-	local backspaceButton = makeButton(actionRow, "Backspace", "", letterColor)
-	local spaceButton = makeButton(actionRow, "Space", "", letterColor)
-	local enterButton = makeButton(actionRow, "Enter", "", Color3.fromRGB(28, 86, 72))
-	backspaceButton.Activated:Connect(backspace)
-	spaceButton.Activated:Connect(function()
-		append(" ")
-	end)
-	enterButton.Activated:Connect(submitEnter)
-	rowButtons[4] = { backspaceButton, spaceButton, enterButton }
-	rowWeights[4] = { 1.8, 3.2, 1.8 }
-
-	local function refreshKeyLabels()
-		backspaceButton.Text = Localization.getText("Match.Backspace")
-		spaceButton.Text = Localization.getText("Match.Space")
-		enterButton.Text = Localization.getText("Match.Enter")
+		render()
 	end
 
 	local function showTouchKeys(): boolean
@@ -405,138 +433,87 @@ function TypingScreen.bind(root: Frame): () -> ()
 		return UserInputService.TouchEnabled
 	end
 
-	local function placeRow(buttons: {TextButton}, weights: {number}?, width: number, rowHeight: number, gap: number, y: number)
-		local parent = buttons[1].Parent
-		if parent ~= nil and parent:IsA("GuiObject") then
-			parent.Position = UDim2.fromOffset(0, y)
-			parent.Size = UDim2.fromOffset(width, rowHeight)
-		end
-		local weightSum = 0
-		if weights ~= nil then
-			for _, weight in weights do
-				weightSum += weight
-			end
-		else
-			weightSum = #buttons
-		end
-		if weightSum <= 0 or width <= 0 or rowHeight <= 0 then
-			return
-		end
-		local totalGap = gap * math.max(0, #buttons - 1)
-		local usable = math.max(0, width - totalGap)
-		local widths = table.create(#buttons)
-		local used = 0
-		for index, button in buttons do
-			local weight = if weights ~= nil then weights[index] else 1
-			local keyWidth = math.floor(usable * weight / weightSum)
-			widths[index] = keyWidth
-			used += keyWidth
-			button.TextSize = math.clamp(rowHeight - 10, 12, 22)
-		end
-		local cursor = math.floor((usable - used) / 2)
-		for index, button in buttons do
-			button.Position = UDim2.fromOffset(cursor, 0)
-			button.Size = UDim2.fromOffset(widths[index], rowHeight)
-			cursor += widths[index] + gap
-		end
-	end
-
-	local jumpSuppressed = false
-	local watchedJumps: {[GuiObject]: boolean} = {}
-
-	local function touchJumpButtons(): {GuiObject}
-		local buttons = {}
-		local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
-		if playerGui == nil then
-			return buttons
-		end
-		local touchGui = playerGui:FindFirstChild("TouchGui")
-		if touchGui == nil then
-			return buttons
-		end
-		for _, descendant in touchGui:GetDescendants() do
-			if descendant.Name == "JumpButton" and descendant:IsA("GuiObject") then
-				table.insert(buttons, descendant)
-			end
-		end
-		return buttons
-	end
-
-	local function watchJumpButton(button: GuiObject)
-		if watchedJumps[button] then
-			return
-		end
-		watchedJumps[button] = true
-		button:GetPropertyChangedSignal("Visible"):Connect(function()
-			if jumpSuppressed and button.Visible then
-				button.Visible = false
-				button.Active = false
-			end
-		end)
-		button.Destroying:Connect(function()
-			watchedJumps[button] = nil
-		end)
-	end
-
-	local function syncJumpButton()
-		local hide = screen.Visible and keyboard.Visible
-		if not hide and not jumpSuppressed then
-			return
-		end
-		jumpSuppressed = hide
-		for _, button in touchJumpButtons() do
-			watchJumpButton(button)
-			button.Visible = not hide
-			button.Active = not hide
-		end
-	end
-
-	local function restoreJumpButton()
-		jumpSuppressed = false
-		for _, button in touchJumpButtons() do
-			button.Visible = true
-			button.Active = true
-		end
-	end
-
 	local function applyLayout()
 		local size = root.AbsoluteSize
 		if size.X < 50 or size.Y < 50 then
 			return
 		end
+		local content = root:GetAttribute("ContentWidth")
+		local viewport = size.X
+		if type(content) == "number" then
+			viewport = math.min(viewport, content)
+		end
 		local plan = TypingLayout.plan(
-			size.X,
+			viewport,
 			size.Y,
 			showTouchKeys(),
 			constants.UI.CompactHeight,
 			constants.UI.CompactWidth
 		)
-		local content = root:GetAttribute("ContentWidth")
-		local width = size.X - plan.margin * 2
-		if type(content) == "number" then
-			width = math.min(width, content)
-		end
-		local x = math.floor((size.X - width) / 2)
+		local origin = math.floor((size.X - viewport) / 2)
+		local x = if plan.compact then math.floor((size.X - plan.questionWidth) / 2) else origin + plan.margin
+		drawer = plan.compact
+		local promptWidth = plan.questionWidth
 		column.Position = UDim2.fromOffset(x, plan.margin)
-		column.Size = UDim2.fromOffset(width, plan.blockHeight)
+		column.Size = UDim2.fromOffset(promptWidth, plan.blockHeight)
+		local timeWidth = if plan.compact then math.floor(promptWidth * 0.46) else promptWidth
+		local scoreWidth = math.floor(promptWidth * 0.27)
 		timeLabel.Position = UDim2.fromOffset(0, 0)
-		timeLabel.Size = UDim2.fromOffset(width, plan.timeHeight)
-		timeLabel.TextSize = math.clamp(plan.timeHeight - 4, 14, 28)
-		questionPanel.Position = UDim2.fromOffset(0, plan.timeHeight + plan.gap)
-		questionPanel.Size = UDim2.fromOffset(width, plan.questionHeight)
-		questionText.TextSize = plan.textSize
-		inputLabel.Position = UDim2.fromOffset(0, plan.timeHeight + plan.gap + plan.questionHeight + plan.gap)
-		inputLabel.Size = UDim2.fromOffset(width, plan.inputHeight)
-		inputLabel.TextSize = plan.inputTextSize
-		keyboard.Visible = plan.showKeys
-		keyboard.Position = UDim2.fromOffset(x, plan.margin + plan.blockHeight + plan.gap)
-		keyboard.Size = UDim2.fromOffset(width, plan.keyBlock)
-		if plan.showKeys then
-			for index, buttons in rowButtons do
-				placeRow(buttons, rowWeights[index], width, plan.rowHeight, plan.gap, (index - 1) * (plan.rowHeight + plan.gap))
-			end
+		timeLabel.TextSize = if plan.compact then 14 else math.clamp(plan.timeHeight - 4, 12, 28)
+		scoreLabel.TextSize = timeLabel.TextSize
+		rankButton.TextSize = timeLabel.TextSize
+		scoreLabel.Visible = plan.compact
+		rankButton.Visible = plan.compact
+		if plan.compact then
+			timeLabel.Size = UDim2.fromOffset(timeWidth, plan.timeHeight)
+			scoreLabel.Position = UDim2.fromOffset(timeWidth, 0)
+			scoreLabel.Size = UDim2.fromOffset(scoreWidth, plan.timeHeight)
+			rankButton.Position = UDim2.fromOffset(timeWidth + scoreWidth, 0)
+			rankButton.Size = UDim2.fromOffset(promptWidth - timeWidth - scoreWidth, plan.timeHeight)
+			rankButton.Active = true
+		else
+			timeLabel.Size = UDim2.fromOffset(promptWidth, plan.timeHeight)
+			rankButton.Active = false
 		end
-		syncJumpButton()
+		questionPanel.Position = UDim2.fromOffset(0, plan.timeHeight + plan.gap)
+		questionPanel.Size = UDim2.fromOffset(promptWidth, plan.questionHeight)
+
+		questionText.Position = UDim2.fromOffset(8, 4)
+		layoutGloss(plan.questionHeight, plan.textSize)
+		pointsLabel.Position = UDim2.new(1, -80, 0, 6)
+		pointsLabel.Size = UDim2.fromOffset(72, 24)
+		pointsLabel.TextSize = math.clamp(plan.textSize - 2, 12, 22)
+		inputLabel.Position = UDim2.fromOffset(0, plan.timeHeight + plan.gap + plan.questionHeight + plan.gap)
+		inputLabel.Size = UDim2.fromOffset(promptWidth, plan.inputHeight)
+		inputLabel.TextSize = plan.inputTextSize
+		pad:placeInput(inputLabel)
+		local boardVisible = plan.rankMode == "side" or ranksOpen
+		rankPanel.Visible = boardVisible
+		if plan.rankMode == "side" then
+			rankPanel.Position = UDim2.fromOffset(x + promptWidth + plan.gap, plan.margin)
+			rankPanel.Size = UDim2.fromOffset(plan.rankWidth, plan.blockHeight)
+
+			rankPanel.ZIndex = 6
+		else
+			rankPanel.Position = UDim2.fromOffset(x, plan.margin + plan.timeHeight + plan.gap)
+			rankPanel.Size = UDim2.fromOffset(promptWidth, plan.questionHeight)
+
+			rankPanel.ZIndex = 9
+		end
+		rankTitle.Position = UDim2.fromOffset(8, 4)
+		rankTitle.Size = UDim2.new(1, -16, 0, 22)
+		rankTitle.TextSize = 14
+		local listTop = if plan.rankMode == "side" then 28 else 0
+		rankList.Position = UDim2.fromOffset(0, listTop)
+		rankList.Size = UDim2.new(1, 0, 1, -listTop)
+		local keyWidth = math.max(0, viewport - plan.margin * 2)
+		pad:layout(
+			UDim2.fromOffset(origin + plan.margin, size.Y - plan.margin - plan.keyBlock),
+			keyWidth,
+			plan.rowHeight,
+			plan.gap,
+			plan.showKeys
+		)
 	end
 
 	local function syncMode()
@@ -545,22 +522,34 @@ function TypingScreen.bind(root: Frame): () -> ()
 			trackingId = id
 			session = nil
 			buffer = ""
-			pushHardware("")
+			echo = ""
+			sentMark = ""
+			pad:composeSettled()
+			pad:setText("")
 			locked = false
 			lastReason = nil
+			standings = {}
+			table.clear(rankNames)
+			table.clear(rankLanguages)
+			ranksOpen = false
 			if id > 0 then
+				lastPlayId = id
 				request:FireServer()
+				scoreRequest:FireServer()
 			end
 		end
-		local playing = id > 0
+		local overlay = root:GetAttribute("PracticeOpen") == true
+			or root:GetAttribute("SettingsOpen") == true
+			or root:GetAttribute("TutorialOpen") == true
+			or root:GetAttribute("RankOpen") == true
+			or root:GetAttribute("ShopOpen") == true
+		local playing = id > 0 and not overlay
 		if playing ~= open then
 			open = playing
-			if open then
-				bindKeys()
-			else
-				unbindKeys()
-			end
+			pad:setEngaged(open)
 		end
+		pad:setIme(session ~= nil and QuestionRules.usesIme(session.typing))
+		MatchCamera.setPlaying(playing)
 		screen.Visible = playing
 		applyLayout()
 		render()
@@ -572,17 +561,68 @@ function TypingScreen.bind(root: Frame): () -> ()
 		end
 		local previous = if session ~= nil then session.issue else 0
 		session, buffer = QuestionRules.applyClient(session, buffer, message, activeMatchId())
-		pushHardware(buffer)
+		pad:setIme(session ~= nil and QuestionRules.usesIme(session.typing))
+		if session == nil or session.issue ~= previous then
+			sentMark = ""
+			locked = false
+			pad:composeSettled()
+		elseif message.reason == "mismatch" then
+			locked = false
+		end
+		pad:setText(buffer)
 		if type(message.reason) == "string" then
 			lastReason = message.reason
 		end
-		if message.reason == "mismatch" or session == nil or session.issue ~= previous then
-			locked = false
+		if session ~= nil and buffer ~= "" and QuestionRules.autoSubmits(session.typing) and session.text ~= "" and QuestionRules.matches(buffer, session.text) then
+			send()
 		end
 		render()
 	end
 
-	refreshKeyLabels()
+	local function onScore(message: any)
+		if type(message) ~= "table" or type(message.matchId) ~= "number" or type(message.rows) ~= "table" then
+			return
+		end
+		local live = activeMatchId()
+		if live > 0 then
+			if message.matchId ~= live then
+				return
+			end
+		elseif message.sealed ~= true or message.matchId ~= lastPlayId then
+			return
+		end
+		local nextRows: {QuestionRules.Standing} = {}
+		local nextNames: {[number]: string} = {}
+		local nextLanguages: {[number]: string} = {}
+		for _, row in message.rows do
+			if type(row) == "table" and type(row.userId) == "number" and type(row.score) == "number" and type(row.rank) == "number" then
+				table.insert(nextRows, {
+					userId = row.userId,
+					score = row.score,
+					reachedAt = 0,
+					rank = row.rank,
+				})
+				nextNames[row.userId] = if type(row.name) == "string" then row.name else tostring(row.userId)
+				nextLanguages[row.userId] = if type(row.language) == "string" then row.language else "EN"
+			end
+		end
+		standings = nextRows
+		rankNames = nextNames
+		rankLanguages = nextLanguages
+		render()
+	end
+
+	rankButton.Activated:Connect(function()
+		if not drawer then
+			return
+		end
+		ranksOpen = not ranksOpen
+		applyLayout()
+		pad:setText(buffer)
+		render()
+	end)
+
+	pad:refreshLabels()
 	applyLayout()
 	render()
 
@@ -596,26 +636,29 @@ function TypingScreen.bind(root: Frame): () -> ()
 		stateFolder:GetAttributeChangedSignal("Phase"):Connect(syncMode),
 		stateFolder:GetAttributeChangedSignal("MatchId"):Connect(syncMode),
 		Players.LocalPlayer:GetAttributeChangedSignal("InMatch"):Connect(syncMode),
+		root:GetAttributeChangedSignal("PracticeOpen"):Connect(syncMode),
+		root:GetAttributeChangedSignal("SettingsOpen"):Connect(syncMode),
+		root:GetAttributeChangedSignal("TutorialOpen"):Connect(syncMode),
+		root:GetAttributeChangedSignal("RankOpen"):Connect(syncMode),
+		root:GetAttributeChangedSignal("ShopOpen"):Connect(syncMode),
 		feedback.OnClientEvent:Connect(onFeedback),
+		scoreState.OnClientEvent:Connect(onScore),
 		RunService.Heartbeat:Connect(function()
-			syncJumpButton()
+			pad:syncJump()
 			if screen.Visible then
 				render()
 			end
 		end),
-		Players.LocalPlayer:WaitForChild("PlayerGui").DescendantAdded:Connect(function(descendant)
-			if descendant.Name == "JumpButton" and descendant:IsA("GuiObject") then
-				watchJumpButton(descendant)
-				if jumpSuppressed then
-					descendant.Visible = false
-					descendant.Active = false
-				end
-			end
-		end),
 	}
 	local stopLocale = Localization.onChanged(function()
-		refreshKeyLabels()
+		pad:refreshLabels()
 		render()
+	end)
+	local stopSettings = SettingsState.onChanged(function()
+		if screen.Visible then
+			render()
+			applyLayout()
+		end
 	end)
 	syncMode()
 
@@ -624,8 +667,9 @@ function TypingScreen.bind(root: Frame): () -> ()
 			connection:Disconnect()
 		end
 		stopLocale()
-		unbindKeys()
-		restoreJumpButton()
+		stopSettings()
+		MatchCamera.setPlaying(false)
+		pad:destroy()
 		screen:Destroy()
 	end
 end

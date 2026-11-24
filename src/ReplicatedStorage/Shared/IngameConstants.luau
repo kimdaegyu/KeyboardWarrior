@@ -20,6 +20,10 @@ return table.freeze({
 		-- Adjacent centres are one pad diameter plus the edge-to-edge gap apart.
 		PadCenterRadius = (padDiameter + padGap) / (2 * math.sin(math.pi / maxParticipants)),
 	}),
+	Rank = table.freeze({
+		TopCount = 50,
+		CacheSeconds = 60,
+	}),
 	-- Initial layout targets in Roblox UI pixels. Measure the safe root, not the device.
 	UI = table.freeze({
 		CompactHeight = 430,

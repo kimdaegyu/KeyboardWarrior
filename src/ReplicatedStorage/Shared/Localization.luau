@@ -21,6 +21,7 @@ local localTable: LocalizationTable? = nil
 local localEntries: { [string]: any } = {}
 local localTranslators: { [string]: Translator } = {}
 local activeLocale: string? = nil
+local pinnedLocale: string? = nil
 local localeWatchStarted = false
 local watchedTranslator: Translator? = nil
 local translatorLocaleConnection: RBXScriptConnection? = nil
@@ -75,6 +76,7 @@ end
 
 local watchPlayerLocale: (Player) -> ()
 local watchTranslator: (Player, Translator) -> ()
+local publishLocale: (string) -> ()
 local adoptLocale: (string) -> ()
 
 local function fetchTranslator(player: Player): Translator?
@@ -191,7 +193,7 @@ local function readLocal(key: string, locale: string, args: { [string]: string }
 		-- hi-in -> hi, es-es/es-mx -> es, ko-kr -> ko, pt-br/pt-pt -> pt.
 		-- The pt column is authored in Brazilian Portuguese.
 		targetLocale = language
-	elseif language == "en" and typeof(entry.Source) == "string" and entry.Source ~= "" then
+	elseif language == (string.match(candidate.SourceLocaleId, "^[^-]+") or candidate.SourceLocaleId) and typeof(entry.Source) == "string" and entry.Source ~= "" then
 		targetLocale = candidate.SourceLocaleId
 	else
 		return nil
@@ -303,7 +305,7 @@ local function fireChanged()
 	end
 end
 
-adoptLocale = function(locale: string)
+publishLocale = function(locale: string)
 	local normalized = normalizeLocale(locale)
 	if normalized == "" or normalized == activeLocale then
 		return
@@ -321,6 +323,35 @@ adoptLocale = function(locale: string)
 	fireChanged()
 end
 
+adoptLocale = function(locale: string)
+	if pinnedLocale ~= nil then
+		return
+	end
+	publishLocale(locale)
+end
+
+function Localization.setPreferredLocale(choice: string?)
+	if IS_SERVER then
+		return
+	end
+	if choice == nil or choice == "" or choice == "auto" then
+		pinnedLocale = nil
+		local player = Players.LocalPlayer
+		local reported: string? = nil
+		if player ~= nil then
+			local current = translatorCache[player] or watchedTranslator
+			local localeId = if current ~= nil then (current :: any).LocaleId else nil
+			reported = if typeof(localeId) == "string" and localeId ~= "" then localeId else accountLocale(player)
+		end
+		if reported ~= nil then
+			publishLocale(reported)
+		end
+		return
+	end
+	pinnedLocale = choice
+	publishLocale(choice)
+end
+
 watchTranslator = function(player: Player, translator: Translator)
 	if watchedTranslator == translator then
 		return
@@ -335,6 +366,9 @@ watchTranslator = function(player: Player, translator: Translator)
 		return
 	end
 	translatorLocaleConnection = signalSource:GetPropertyChangedSignal("LocaleId"):Connect(function()
+		if pinnedLocale ~= nil then
+			return
+		end
 		local reported = signalSource.LocaleId
 		if typeof(reported) ~= "string" or reported == "" then
 			return
@@ -351,6 +385,9 @@ watchPlayerLocale = function(player: Player)
 	end
 	localeWatchStarted = true
 	player:GetPropertyChangedSignal("LocaleId"):Connect(function()
+		if pinnedLocale ~= nil then
+			return
+		end
 		translatorCache[player] = nil
 		translatorLocales[player] = nil
 		defer(function()
@@ -367,6 +404,12 @@ watchPlayerLocale = function(player: Player)
 	defer(function()
 		while player.Parent ~= nil do
 			task.wait(0.5)
+			if pinnedLocale ~= nil then
+				if activeLocale ~= pinnedLocale then
+					publishLocale(pinnedLocale)
+				end
+				continue
+			end
 			local current = translatorCache[player]
 			if current == nil then
 				current = watchedTranslator

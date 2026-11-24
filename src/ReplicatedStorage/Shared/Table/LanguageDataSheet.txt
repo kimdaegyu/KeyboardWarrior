@@ -1,0 +1,3 @@
+Id,NativeName,SortOrder,UiEnabled,PcTypingEnabled,MobileTypingEnabled,GlossEnabled
+en,English,1,1,1,1,1
+ko,한국어,2,1,1,0,1

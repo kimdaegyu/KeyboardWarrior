@@ -9,7 +9,10 @@ local Workspace = game:GetService("Workspace")
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local MatchRules = require(ReplicatedStorage.Shared.MatchRules)
 local ArenaService = require(script.Parent.ArenaService)
+local ShopService = require(script.Parent.ShopService)
+local ProfileService = require(script.Parent.ProfileService)
 local QuestionService = require(script.Parent.QuestionService)
+local RewardService = require(script.Parent.RewardService)
 
 local MATCH = constants.Match
 
@@ -137,6 +140,7 @@ local function disconnectAssignment(assignment: Assignment)
 end
 
 local function clearAssignments()
+	ArenaService.undressAll()
 	for player, assignment in assignments do
 		disconnectAssignment(assignment)
 		player:SetAttribute("InMatch", false)
@@ -204,6 +208,7 @@ local function lockParticipants()
 			}
 			assignments[player] = assignment
 			player:SetAttribute("InMatch", true)
+			ArenaService.dress(padIndex, ShopService.paintFor(userId))
 			watchPad(player, assignment)
 			table.insert(participants, userId)
 		end
@@ -223,6 +228,7 @@ local function releaseParticipants()
 	end
 	for player, assignment in leaving do
 		disconnectAssignment(assignment)
+		ArenaService.undress(assignment.padIndex)
 		player:SetAttribute("InMatch", false)
 		local character = player.Character
 		if character ~= nil and player.Parent ~= nil then
@@ -237,7 +243,10 @@ end
 local function enter(nextPhase: Phase)
 	local previous = phase
 	if previous == "Play" then
-		QuestionService.closeMatch()
+		local captured = QuestionService.closeMatch()
+		if captured ~= nil then
+			RewardService.finalize(captured)
+		end
 	end
 	phase = nextPhase
 	local duration = PHASE_SECONDS[nextPhase]
@@ -289,17 +298,23 @@ function MatchService.start()
 		local assignment = assignments[player]
 		if assignment ~= nil then
 			disconnectAssignment(assignment)
+			ArenaService.undress(assignment.padIndex)
 			assignments[player] = nil
 		end
 		waitingStarted[player] = nil
+		RewardService.onPlayerRemoving(player.UserId)
 		QuestionService.forget(player.UserId)
 		player:SetAttribute("InJoinZone", nil)
 		player:SetAttribute("InMatch", nil)
 		publish()
+		ProfileService.close(player.UserId)
 	end)
 
 	RunService.Heartbeat:Connect(function()
 		refreshZone()
+		if phase == "Play" then
+			QuestionService.noteClock()
+		end
 	end)
 
 	task.spawn(function()
