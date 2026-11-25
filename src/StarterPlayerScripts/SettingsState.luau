@@ -8,11 +8,14 @@ local Gloss = require(ReplicatedStorage.Shared.Gloss)
 local Localization = require(ReplicatedStorage.Shared.Localization)
 local SettingsRules = require(ReplicatedStorage.Shared.SettingsRules)
 local TableData = require(ReplicatedStorage.Shared.TableData)
+local SoundManager = require(script.Parent.SoundManager)
 
 export type Choice = {
 	uiLocale: string,
 	gloss: string,
 	typing: string,
+	bgmVolume: number,
+	sfxVolume: number,
 }
 
 local SettingsState = {}
@@ -26,6 +29,8 @@ local applied: Choice = {
 	uiLocale = "auto",
 	gloss = "off",
 	typing = SettingsRules.shownTyping(languageList, nil),
+	bgmVolume = 100,
+	sfxVolume = 100,
 }
 local saveState = "loading"
 local started = false
@@ -49,7 +54,13 @@ function SettingsState.languages(): {SettingsRules.Language}
 end
 
 function SettingsState.applied(): Choice
-	return { uiLocale = applied.uiLocale, gloss = applied.gloss, typing = applied.typing }
+	return {
+		uiLocale = applied.uiLocale,
+		gloss = applied.gloss,
+		typing = applied.typing,
+		bgmVolume = applied.bgmVolume,
+		sfxVolume = applied.sfxVolume,
+	}
 end
 
 function SettingsState.sessionTyping(): string
@@ -85,14 +96,14 @@ local function reportDevice()
 	end
 end
 
-function SettingsState.apply(uiLocale: string, gloss: string, typing: string)
+function SettingsState.apply(uiLocale: string, gloss: string, typing: string, bgmVolume: number, sfxVolume: number)
 	local remote = applyRemote
 	if remote == nil then
 		return
 	end
 	saveState = "saving"
 	fire()
-	remote:FireServer(uiLocale, gloss, typing)
+	remote:FireServer(uiLocale, gloss, typing, bgmVolume, sfxVolume)
 end
 
 function SettingsState.start()
@@ -116,7 +127,10 @@ function SettingsState.start()
 			uiLocale = SettingsRules.shownUi(languageList, message.uiLocale),
 			gloss = SettingsRules.shownGloss(languageList, message.gloss),
 			typing = SettingsRules.shownTyping(languageList, message.typing),
+			bgmVolume = SettingsRules.shownVolume(message.bgmVolume),
+			sfxVolume = SettingsRules.shownVolume(message.sfxVolume),
 		}
+		SoundManager.setVolumes(applied.bgmVolume, applied.sfxVolume)
 		saveState = message.saveState
 		if saveState ~= "loading" then
 			publishLocale()

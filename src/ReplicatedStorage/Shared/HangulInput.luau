@@ -100,6 +100,23 @@ local function takeTail(state: State): number?
 	return TAIL_LEAD[tail]
 end
 
+-- Standard Dubeolsik letter strokes: compound vowels and final clusters use two keys.
+function HangulInput.strokes(text: string): number
+	local total = 0
+	for _, code in utf8.codes(text) do
+		if code >= 0xAC00 and code <= 0xD7A3 then
+			local syllable = code - 0xAC00
+			local vowel = math.floor(syllable / 28) % 21
+			local tail = syllable % 28
+			total += 2 + (if VOWEL_UNDO[vowel] then 1 else 0)
+			if tail ~= 0 then total += if TAIL_SPLIT[tail] then 2 else 1 end
+		else
+			total += 1
+		end
+	end
+	return total
+end
+
 function HangulInput.begin(): State
 	return {
 		committed = "",

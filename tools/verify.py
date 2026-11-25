@@ -203,7 +203,8 @@ def check_lobby_copy():
     bootstrap = (ROOT / "src/StarterPlayerScripts/Bootstrap.client.luau").read_text(encoding="utf-8")
     require("LobbyHud" in bootstrap and "SafeRoot" in bootstrap, "HUD must mount on SafeRoot")
     server = (ROOT / "src/ServerScriptService/Core/Bootstrap.server.luau").read_text(encoding="utf-8")
-    require("ArenaService" in server and "MatchService" in server, "Server bootstrap")
+    require("ArenaService" in server and "MatchService" in server and "FloorService" in server, "Server bootstrap")
+    require("FloorRise" in bootstrap, "floor visuals mount with the client")
 
 
 def select_participants(candidates, max_participants, min_participants):
@@ -282,6 +283,44 @@ def check_m1_rules():
         select_participants([{"userId": 1, "inZone": False, "waitStartedAt": 0}], max_participants, min_participants) == [],
         "empty cycle",
     )
+    look = (SHARED / "PadLook.luau").read_text(encoding="utf-8")
+    body = look[look.find("function PadLook.apply"):look.find("clearNamed(pad, \"PadRim\")")]
+    require("Enum.Material.Asphalt" in body and "Enum.Material.Neon" not in body, "arena pad bodies use asphalt")
+
+    def acquired_floors(previous, current, per=5):
+        previous = previous if previous > 0 else 0
+        current = current if current > 0 else 0
+        return max(0, current // per - previous // per)
+
+    require(acquired_floors(0, 4) == 0 and acquired_floors(4, 5) == 1 and acquired_floors(5, 10) == 1, "partial floors stay in the cumulative score")
+    require(acquired_floors(0, 25) == 5 and acquired_floors(3, 28) == 5 and acquired_floors(28, 30) == 1, "a score jump earns every crossed floor")
+    require(acquired_floors(0, 25) * 0.2 == 1 and 10 * 1 == 10, "five floors take one second and ten floors rise ten studs")
+    floor_constants = (SHARED / "IngameConstants.luau").read_text(encoding="utf-8")
+    floor_rules = (SHARED / "FloorRules.luau").read_text(encoding="utf-8")
+    floor_service = (ROOT / "src/ServerScriptService/Core/FloorService.luau").read_text(encoding="utf-8")
+    floor_rise = (ROOT / "src/StarterPlayerScripts/FloorRise.luau").read_text(encoding="utf-8")
+    questions = (ROOT / "src/ServerScriptService/Core/QuestionService.luau").read_text(encoding="utf-8")
+    match = (ROOT / "src/ServerScriptService/Core/MatchService.luau").read_text(encoding="utf-8")
+    require("ScorePerFloor = 5" in floor_constants and "FloorHeight = 1" in floor_constants and "FloorAnimationDuration = 0.2" in floor_constants and "CharacterRiseDuration = 0," in floor_constants and "RimRotationSpeed = 45" in floor_constants, "floor constants live in one table")
+    require("FloorService.noteScore" in questions and "shownScore" in questions, "awarded score starts the stack")
+    require("FloorService.finishMatch" in match and "FloorService.clear" in match and "FloorService.bind" in match, "match start and leave own the stack")
+    require("RimRotationSpeed" not in floor_service, "the server does not spin rims")
+    require("math.rad(FLOOR.RimRotationSpeed) * dt" in floor_rise and "BasePad" in floor_rise and "CanCollide = false" in floor_rise, "one client heartbeat spins every rim")
+    require("phase ~= \"Play\" and phase ~= \"Result\"" in floor_rise and "if phase == \"Result\" then" in floor_rise, "result keeps the stacked pads")
+    rise_step = floor_rise.split("if floors <= #show.built then return end", 1)[1].split("local function flushHeld", 1)[0]
+    require(rise_step.index("liftCharacter(show, floors)") < rise_step.index("animateFloor(show, index)"), "client snaps before exposing the new floor")
+    pump_src = floor_service.split("local function pump", 1)[1].split("local function drop", 1)[0]
+    require(pump_src.index("pose(stack, stack.applied)") < pump_src.index("tell(withLook") < pump_src.index("task.wait"), "each individual lift is committed and broadcast before the visual wait")
+    require("floors = stack.applied" in floor_service.split("local function sendSnapshot", 1)[1], "late clients see only committed steps")
+    require("function FloorRules.acquired" in floor_rules and "function FloorRules.selfCheck" in floor_rules, "floor count is shared")
+    arena = (ROOT / "src/ServerScriptService/Core/ArenaService.luau").read_text(encoding="utf-8")
+    enter = match[match.find("local function enter"):match.find("local function advance")]
+    play_end = enter[enter.find('if previous == "Play"'):enter.find("phase = nextPhase")]
+    play_start = enter[enter.find('if nextPhase == "Play"'):enter.find("elseif")]
+    require("setInnerWallCollide(false)" in play_end and "FloorService.finishMatch" not in play_end, "the arena wall opens when play ends and the stack stays")
+    require('FloorService.finishMatch(matchId)' in enter, "stacked pads clear after the result window")
+    require("ejectOutsiders" in play_start and "setInnerWallCollide(true)" in play_start, "outsiders leave before the wall closes")
+    require('FindFirstChild("InWall")' in arena and "part.CanCollide = enabled" in arena, "InWall collision follows the match")
 
 
 def enabled_deck(rows):
@@ -426,15 +465,15 @@ def typing_plan(width, height, show_keys):
         input_height = 22
         room = height - margin * 2 - time_height - input_height - gap * 2 - key_block
         question_height = min(question_cap, max(0, room))
+    time_height, input_height, question_height = (int(n * 0.8 + 0.5) for n in (time_height, input_height, question_height))
     block_height = time_height + question_height + input_height + gap * 2
+    view_room = height - (margin * 2 + block_height + key_block)
+    if compact and time_height < 36 and view_room >= 36 - time_height:
+        extra = 36 - time_height
+        time_height += extra
+        block_height += extra
     inner = max(0, width - margin * 2)
-    rank_width = 0
     question_width = inner
-    rank_mode = "drawer"
-    if not compact and inner > 0:
-        rank_mode = "side"
-        rank_width = min(340, max(220, int(inner * 0.28)))
-        question_width = max(0, inner - rank_width - gap)
     view_lane = 0
     if compact and show_keys and question_width > 360:
         view_lane = question_width - 360
@@ -451,8 +490,6 @@ def typing_plan(width, height, show_keys):
         "gap": gap,
         "showKeys": show_keys,
         "compact": compact,
-        "rankMode": rank_mode,
-        "rankWidth": rank_width,
         "questionWidth": question_width,
         "viewGap": view_gap,
         "viewLane": view_lane,
@@ -527,14 +564,14 @@ def check_m2_rules():
 
     phone = typing_plan(568, 320, True)
     require(phone["rowHeight"] == 36 and phone["keyBlock"] == 156, "four phone key rows")
-    require(phone["questionHeight"] == 64 and phone["inputHeight"] == 28 and phone["timeHeight"] == 22, "phone prompt and input")
-    require(phone["rankMode"] == "drawer" and phone["rankWidth"] == 0 and phone["questionWidth"] == 360, "phone rank drawer")
-    require(phone["viewLane"] == 196 and phone["viewGap"] == 30, "phone keeps an arena lane beside the prompt")
+    require(phone["questionHeight"] == 51 and phone["inputHeight"] == 22 and phone["timeHeight"] == 36, "phone prompt and input")
+    require(phone["questionWidth"] == 360, "phone rank drawer")
+    require(phone["viewLane"] == 196 and phone["viewGap"] == 35, "phone keeps an arena lane beside the prompt")
     used = phone["margin"] * 2 + phone["blockHeight"] + phone["keyBlock"]
     require(used + phone["viewGap"] == 320, "568×320 shows the prompt, keys, and an arena gap")
     desktop = typing_plan(1366, 768, False)
-    require(desktop["questionHeight"] == 112 and desktop["viewGap"] == 544 and desktop["questionHeight"] > phone["questionHeight"], "desktop returns leftover height to the arena")
-    require(desktop["rankMode"] == "side" and desktop["rankWidth"] == 340 and desktop["questionWidth"] == 990 and desktop["viewLane"] == 0, "desktop rank board stays beside the prompt")
+    require(desktop["questionHeight"] == 90 and desktop["viewGap"] == 580 and desktop["questionHeight"] > phone["questionHeight"], "desktop returns leftover height to the arena")
+    require(desktop["questionWidth"] == 1366 - 2 * desktop["margin"] and desktop["viewLane"] == 0, "desktop prompt uses the available width with ranks collapsed")
     require(accept_enter(False, "look out") and not accept_enter(True, "look out") and not accept_enter(False, ""), "Enter after an auto-correct does not submit the next prompt")
     draft = ""
     for piece in ("lo", "ok", " out"):
@@ -562,6 +599,11 @@ def check_m2_rules():
     require('rows("QuestionDataSheet")' in service and "QuestionRules" in service, "questions come from the sheet")
     match = (ROOT / "src/ServerScriptService/Core/MatchService.luau").read_text(encoding="utf-8")
     require("QuestionService.openMatch" in match and "QuestionService.closeMatch" in match and "QuestionService.forget" in match, "match hooks")
+    leave = match[match.find("local function leaveParticipant"):match.find("local function enter")]
+    require("matchId = 0" not in leave and "returnParticipant" in leave and leave.find("settleDeparture") < leave.find("QuestionService.forget"), "one player leaves without resetting the match")
+    require("ProfileService.close" not in leave and "placeInLobby" in match, "a leave returns that player and does not close the profile")
+    removing = match[match.find("Players.PlayerRemoving"):match.find("RunService.Heartbeat")]
+    require(removing.find("onPlayerRemoving") < removing.find("QuestionService.forget") < removing.find("ProfileService.close"), "disconnect still reads the reward before forgetting the player")
     pad = (ROOT / "src/StarterPlayerScripts/TypingPad.luau").read_text(encoding="utf-8")
     require(
         "CaptureFocus" in pad and "if UserInputService.TouchEnabled then" in pad,
@@ -588,7 +630,15 @@ def check_m2_rules():
     require("MatchCamera" not in practice, "practice does not use the match camera")
     require("sessionTyping" in practice and "setIme" in practice and "usesIme" in practice and "settleField" in practice, "practice uses the session typing language")
     camera = (ROOT / "src/StarterPlayerScripts/MatchCamera.luau").read_text(encoding="utf-8")
-    require("Enum.CameraType.Scriptable" in camera and "savedType" in camera and "setPlaying" in camera, "the match camera can be restored")
+    require("Enum.CameraType.Scriptable" in camera and "savedType" in camera and "setPlaying" in camera and "Enum.CameraType.Custom" in camera and "CameraMode.Classic" in camera, "the match camera can be restored and the result can look around")
+    require("setOrbit" in camera and "setOrbit" in typing, "result unlocks camera rotation")
+    require("BindToRenderStep" in camera and "UnbindFromRenderStep" in camera and "HumanoidRootPart" in camera and "local rise" in camera, "the match camera follows the character height once")
+    rise = (ROOT / "src/StarterPlayerScripts/FloorRise.luau").read_text(encoding="utf-8")
+    require('SoundManager.play("PadLevelUp")' in rise and "LocalPlayer.UserId" in rise, "only the local floor step plays the level sound")
+    sound_rows = (ROOT / "src/ReplicatedStorage/Shared/Table/SoundDataSheet.txt").read_text(encoding="utf-8").splitlines()
+    pad_level = next(line for line in sound_rows if line.startswith("13,PadLevelUp,"))
+    pad_columns = pad_level.split(",")
+    require(pad_columns[5] == "" and pad_columns[9] == "0" and pad_columns[3] == "SFX", "PadLevelUp waits for a real asset and does not loop")
     bootstrap = (ROOT / "src/StarterPlayerScripts/Bootstrap.client.luau").read_text(encoding="utf-8")
     require("TypingScreen" in bootstrap and "SafeRoot" in bootstrap, "typing screen mounts on SafeRoot")
     lobby = (ROOT / "src/StarterPlayerScripts/LobbyHud.luau").read_text(encoding="utf-8")
@@ -782,8 +832,9 @@ def check_m3_rules():
     require("sessionTyping" in service and "languageCode" in service, "the server freezes each player's typing language")
     require('language = "EN"' not in service, "rank language comes from the issued language")
     typing = (ROOT / "src/StarterPlayerScripts/TypingScreen.luau").read_text(encoding="utf-8")
-    for key in ("Match.MyScore", "Match.MyRank", "Match.Points", "Match.DoubleTime", "Match.Language", "Match.RankTitle", "Match.ShowRanks", "Match.HideRanks"):
+    for key in ("Match.MyScore", "Match.MyRank", "Match.Points", "Match.DoubleTime", "Match.Language", "Match.ShowRanks", "Match.HideRanks"):
         require(key in typing, key)
+    require("rankPanel.Visible = ranksOpen" in typing and "local ranksOpen = false" in typing, "rank panel opens only on request")
     require("scoreState.OnClientEvent" in typing and "setDraft" not in typing[typing.find("function onScore"):typing.find("rankButton.Activated")], "rank updates do not rewrite the draft")
     with (ROOT / "src/localization/CoreStrings.csv").open(encoding="utf-8", newline="") as stream:
         copy = {row["Key"]: row for row in csv.DictReader(stream)}
@@ -847,6 +898,10 @@ def apply_grant(profile, settlement_id, gold, exp, score, finished):
         updated["gloss"] = profile["gloss"]
     if isinstance(profile.get("typing"), str):
         updated["typing"] = profile["typing"]
+    if volume_ok(profile.get("bgmVolume")) and profile.get("bgmVolume") is not None:
+        updated["bgmVolume"] = profile["bgmVolume"]
+    if volume_ok(profile.get("sfxVolume")) and profile.get("sfxVolume") is not None:
+        updated["sfxVolume"] = profile["sfxVolume"]
     if isinstance(profile.get("tutorialSeen"), bool):
         updated["tutorialSeen"] = profile["tutorialSeen"]
     if isinstance(profile.get("owned"), list):
@@ -885,6 +940,12 @@ def grant_list_ok(value):
     return all(isinstance(entry, str) and entry for entry in value)
 
 
+def volume_ok(value):
+    if value is None:
+        return True
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 100 and value % 5 == 0
+
+
 def profile_ok(value):
     if not isinstance(value, dict) or value.get("schemaVersion") != 1:
         return False
@@ -913,6 +974,8 @@ def profile_ok(value):
         and slot_ok(value.get("body"))
         and slot_ok(value.get("rim"))
         and slot_ok(value.get("effect"))
+        and volume_ok(value.get("bgmVolume"))
+        and volume_ok(value.get("sfxVolume"))
     )
 
 
@@ -958,7 +1021,7 @@ def check_m4_rules():
     left, left_applied = apply_grant(fresh, "server-a:1:left", rates["Word"][0], rates["Word"][1], 10, False)
     require(left_applied and left["gold"] == rates["Word"][0] and left["bestScore"] == 20, "leaving keeps the previous best score")
     level, floor_exp, next_exp = level_progress(100, levels)
-    require(level == 2 and floor_exp == 100 and next_exp is None, "100 exp reaches level 2")
+    require(level == 2 and floor_exp == 100 and next_exp == (levels[2][1] if len(levels) > 2 else None), "100 exp reaches level 2")
     require(level_progress(90, levels)[0] == 1, "90 exp stays on level 1")
 
     sealed = [{"userId": 9, "score": 10, "rank": 1}, {"userId": 2, "score": 10, "rank": 2}]
@@ -1072,6 +1135,52 @@ def practice_complete(session, words, sentences):
     session["busy"] = False
 
 
+def lua_round(value):
+    return math.floor(value + 0.5) if value >= 0 else math.ceil(value - 0.5)
+
+
+def lobby_actions(width, height, compact_height=430, compact_width=760):
+    compact = height <= compact_height or width <= compact_width
+    edge = min(20, max(6, lua_round(height * 0.02)))
+    status_height = min(90 if compact else 116, math.floor(height * 0.36))
+    status_width = min(240, max(138, lua_round(width * 0.19)))
+    gap = max(4, lua_round(status_width * 0.04))
+    side = math.floor((status_width - gap * 2) / 3)
+    side = max(1, side)
+    spare = status_width - (side * 3 + gap * 2)
+    if spare < 0:
+        gap = max(1, math.floor((status_width - side * 3) / 2))
+        spare = status_width - (side * 3 + gap * 2)
+    card_top = height * 0.40 - status_height / 2
+    above = gap
+    room = math.floor(card_top - above)
+    row_width = status_width
+    scaled = False
+    if side > room and room >= 1:
+        scale = room / side
+        side = max(1, math.floor(side * scale))
+        gap = max(1, math.floor(gap * scale))
+        spare = 0
+        row_width = side * 3 + gap * 2
+        scaled = True
+    card_right = width - edge
+    row_left = card_right - row_width
+    row_top = max(0, card_top - above - side)
+    return {
+        "side": side,
+        "gap": gap,
+        "spare": spare,
+        "scaled": scaled,
+        "row_left": row_left,
+        "row_top": row_top,
+        "row_right": row_left + side * 3 + gap * 2 + max(0, spare),
+        "card_left": card_right - status_width,
+        "card_right": card_right,
+        "card_top": card_top,
+        "icon": max(1, math.floor(side * 0.6)),
+    }
+
+
 def check_m5_rules():
     rows = read_rows(SHARED / "Table", "QuestionDataSheet", "Id Kind GradeId Score Enabled en ko")
     words = [row["en"] for row in rows if row["Enabled"] == "1" and row["Kind"] == "Word" and row["en"]]
@@ -1125,6 +1234,8 @@ def check_m5_rules():
     require("TypingPad" in practice and "practicePlan" in practice and "blockedByMatch" in practice, "practice shares the pad")
     require("KeyboardWarriorPractice" in practice and "KeyboardWarriorTyping" in typing, "pads use separate key actions")
     require("QuestionSubmit" in typing and "TypingPad" in typing and "PracticeOpen" in typing and "inputMethod" in typing, "the match pad still submits and reports the input method")
+    require("10078" in practice and 'SetAttribute("PracticeOpen", false)' in practice and "Practice.Exit" not in practice, "practice exit is the leave icon and does not move the player")
+    require("10078" in typing and "MatchLeave" in typing and "pendingLeaveId" in typing and "side + plan.gap" in typing, "match leave is one square ahead of the status cells")
     questions = (ROOT / "src/ServerScriptService/Core/QuestionService.luau").read_text(encoding="utf-8")
     require("PlaytestMetrics" in questions and "IsStudio" in questions and "noteClock" in questions, "Studio prints the playtest summary once when the match closes")
     metrics = (SHARED / "PlaytestMetrics.luau").read_text(encoding="utf-8")
@@ -1138,7 +1249,20 @@ def check_m5_rules():
     result = (ROOT / "src/StarterPlayerScripts/ResultScreen.luau").read_text(encoding="utf-8")
     require("PracticeOpen" in result and 'phase == "Result"' in result, "result stays off the practice screen")
     lobby = (ROOT / "src/StarterPlayerScripts/LobbyHud.luau").read_text(encoding="utf-8")
-    require("PracticeOpen" in lobby and "Practice.Start" in lobby and "Practice.Outside" in lobby, "lobby practice entry")
+    require("PracticeOpen" in lobby and "canPractice" in lobby and "InJoinZone" in lobby and 'paint(practiceButton, if available then "primary" else "panel")' in lobby, "lobby practice entry stays in place and only its face changes")
+    require("practiceHint" not in lobby and "Caption" not in lobby and "Practice.Outside" not in lobby, "the practice hint no longer replaces the button")
+    phone_actions = lobby_actions(568, 320)
+    desktop_actions = lobby_actions(1920, 1080)
+    require(not phone_actions["scaled"] and not desktop_actions["scaled"], "568×320 and 1920×1080 keep the action row on the status card")
+    require(phone_actions["row_left"] == phone_actions["card_left"] and phone_actions["row_right"] == phone_actions["card_right"], "the phone row matches the status card edges")
+    require(desktop_actions["row_left"] == desktop_actions["card_left"] and desktop_actions["row_right"] == desktop_actions["card_right"], "the desktop row matches the status card edges")
+    require(phone_actions["side"] * 3 + phone_actions["gap"] * 2 + phone_actions["spare"] == phone_actions["card_right"] - phone_actions["card_left"], "three phone squares and two gaps fill the card")
+    require(desktop_actions["side"] * 3 + desktop_actions["gap"] * 2 + desktop_actions["spare"] == desktop_actions["card_right"] - desktop_actions["card_left"], "three desktop squares and two gaps fill the card")
+    require(phone_actions["row_top"] >= 0 and phone_actions["row_top"] + phone_actions["side"] <= phone_actions["card_top"], "the phone row sits above the status card")
+    require(desktop_actions["row_top"] + desktop_actions["side"] <= desktop_actions["card_top"], "the desktop row sits above the status card")
+    require(phone_actions["icon"] == math.floor(phone_actions["side"] * 0.6), "the icon stays about 60 percent of the square")
+    short_actions = lobby_actions(568, 180)
+    require(short_actions["scaled"] and short_actions["row_top"] >= 0 and short_actions["row_right"] == short_actions["card_right"], "a short screen scales the whole row inside the safe area")
     require('phaseName == "Play"' in lobby and "InMatch" in lobby, "match HUD visibility stays")
     bootstrap = (ROOT / "src/StarterPlayerScripts/Bootstrap.client.luau").read_text(encoding="utf-8")
     require("PracticeScreen" in bootstrap and "TypingScreen" in bootstrap and "ResultScreen" in bootstrap and "SafeRoot" in bootstrap, "one root")
@@ -1227,7 +1351,15 @@ def shown_choice(rows, value, special, flag):
     return special
 
 
-def apply_settings(profile, ui_locale, gloss, rows, typing=None):
+def keep_volume(stored, requested):
+    if requested is None:
+        if stored is None:
+            return 100
+        return stored if volume_ok(stored) else 100
+    return requested if volume_ok(requested) else None
+
+
+def apply_settings(profile, ui_locale, gloss, rows, typing=None, bgm=None, sfx=None):
     if not accepts_choice(rows, ui_locale, "auto", "UiEnabled") or not accepts_choice(rows, gloss, "off", "GlossEnabled"):
         return None
     stored = profile.get("typing") if typing is None else typing
@@ -1235,6 +1367,10 @@ def apply_settings(profile, ui_locale, gloss, rows, typing=None):
         pc_ids = {row["Id"] for row in rows if row.get("PcTypingEnabled") == "1"}
         if stored not in pc_ids:
             return None
+    bgm_volume = keep_volume(profile.get("bgmVolume"), bgm)
+    sfx_volume = keep_volume(profile.get("sfxVolume"), sfx)
+    if bgm_volume is None or sfx_volume is None:
+        return None
     return {
         "schemaVersion": profile["schemaVersion"],
         "gold": profile["gold"],
@@ -1243,6 +1379,8 @@ def apply_settings(profile, ui_locale, gloss, rows, typing=None):
         "grants": list(profile.get("grants") or []),
         "uiLocale": ui_locale,
         "gloss": gloss,
+        "bgmVolume": bgm_volume,
+        "sfxVolume": sfx_volume,
         **({"typing": stored} if isinstance(stored, str) else {}),
         **({"tutorialSeen": profile["tutorialSeen"]} if isinstance(profile.get("tutorialSeen"), bool) else {}),
         **({"ranked": True} if profile.get("ranked") is True else {}),
@@ -1260,7 +1398,7 @@ def check_settings_rules():
     require(gloss_band(90, False) == 0 and gloss_band(90, True) == 30, "a hidden gloss gives the prompt its space back")
     require(gloss_band(76, True) == 25 and gloss_band(64, True) == 21 and 64 - gloss_band(64, True) >= 36, "the gloss stays inside the prompt")
     phone = typing_plan(568, 320, True)
-    require(phone["inputHeight"] == 28 and phone["keyBlock"] == 156 and phone["questionHeight"] == 64, "meaning text does not move the input or last key row")
+    require(phone["inputHeight"] == 22 and phone["keyBlock"] == 156 and phone["questionHeight"] == 51, "meaning text does not move the input or last key row")
 
     require(gloss_for(rows, "2", "ko") == "별" and gloss_for(rows, "2", "en") == "star", "meaning follows the selected language column")
     languages = read_rows(
@@ -1307,6 +1445,16 @@ def check_settings_rules():
     require(apply_settings(fresh, "ko", "ko", languages, "ja") is None and fresh["typing"] == "ko", "a disabled typing language is not saved")
     switched = apply_settings(fresh, "ko", "off", languages, "en")
     require(switched is not None and switched["typing"] == "en" and switched["gloss"] == "off" and fresh["typing"] == "ko", "an enabled typing language is stored without editing the previous profile")
+    require(switched["bgmVolume"] == 100 and switched["sfxVolume"] == 100, "a profile without volumes starts full")
+    muted = apply_settings(fresh, "ko", "off", languages, "en", 0, 100)
+    require(muted is not None and muted["bgmVolume"] == 0 and muted["sfxVolume"] == 100 and fresh.get("bgmVolume") is None, "mute is stored without editing the previous profile")
+    half = apply_settings(muted, "ko", "off", languages, "en", 50, 0)
+    require(half is not None and half["bgmVolume"] == 50 and half["sfxVolume"] == 0, "one volume can change")
+    kept_volume = apply_settings(half, "auto", "off", languages, "en")
+    require(kept_volume is not None and kept_volume["bgmVolume"] == 50 and kept_volume["sfxVolume"] == 0, "an older language request keeps the volumes")
+    require(apply_settings(fresh, "ko", "off", languages, "en", 10, 3) is None, "a bad volume step is rejected")
+    require(profile_ok({"schemaVersion": 1, "gold": 0, "exp": 0, "bestScore": 0, "bgmVolume": 0, "sfxVolume": 100}), "mute and full volume can be stored")
+    require(not profile_ok({"schemaVersion": 1, "gold": 0, "exp": 0, "bestScore": 0, "bgmVolume": 7}), "a volume off the 5 percent step does not open")
     pc_ids = [row["Id"] for row in languages if row["PcTypingEnabled"] == "1"]
     mobile_ids = [row["Id"] for row in languages if row["MobileTypingEnabled"] == "1"]
 
@@ -1371,7 +1519,11 @@ def check_settings_rules():
         require(banned not in screen, f"settings UI must not call {banned}")
     require('saveState == "saved"' not in screen and "Settings.Saved" in screen, "saved copy is selected from the server state")
     require('state == "saved"' in screen, "save complete is a distinct settings state")
-    require("ScrollingFrame" in screen and "Settings.Back" in screen and "koreanButton" not in screen and "Settings.TypingMobile" in screen, "language choices use one scrolling list")
+    require("ScrollingFrame" in screen and "Settings.Back" in screen and "koreanButton" not in screen and "Settings.MobileInput" in screen and "English (QWERTY)" in screen, "language choices use one scrolling list and identify the mobile keyboard")
+    require("Settings.MusicVolume" in screen and "Settings.SoundEffectsVolume" in screen and "UIConfirm" in screen and "setVolumes" in screen, "volume rows preview on this client and confirm a released effect")
+    require('usedHeight(plan, #rows)' in screen and "#rows * plan.stride" in screen, "settings height follows the real row count")
+    sound = (ROOT / "src/StarterPlayerScripts/SoundManager.luau").read_text(encoding="utf-8")
+    require("SoundGroup" in sound and "desiredBgm / 100" in sound and "tonumber(row.Volume)" in sound, "player volume scales the bus and leaves each clip volume")
     service = (ROOT / "src/ServerScriptService/Core/SettingsService.luau").read_text(encoding="utf-8")
     require("ProfileService.applySettings" in service and "ProfileService.save" in service, "settings go through the profile session")
     require("LanguageDataSheet" in service and "TypingDevice" in service and "isMobile" in service, "the server validates choices from the language sheet and stores the device")
@@ -1379,14 +1531,15 @@ def check_settings_rules():
     require("savePending" in profile_service and "function ProfileService.applySettings" in profile_service, "profile writes do not overlap a stale snapshot")
     require("RewardService" not in service, "settings do not grant a reward")
     lobby = (ROOT / "src/StarterPlayerScripts/LobbyHud.luau").read_text(encoding="utf-8")
-    require("SettingsOpen" in lobby and "Settings.Open" in lobby and 'phaseName == "Play"' in lobby, "settings shares the lobby menu")
+    require("SettingsOpen" in lobby and "TopbarSafeInsets" in lobby and 'phaseName == "Play"' in lobby, "settings opens beside the Roblox top bar")
+    require("practiceButton, shopButton, rankButton" in lobby and "KeyboardWarriorTopbar" in lobby and "TouchControls" not in lobby, "settings stays on the top bar and the action row ignores the joystick")
     typing = (ROOT / "src/StarterPlayerScripts/TypingScreen.luau").read_text(encoding="utf-8")
     practice = (ROOT / "src/StarterPlayerScripts/PracticeScreen.luau").read_text(encoding="utf-8")
     require("SettingsState.glossText" in typing and "SettingsState.glossText" in practice, "both screens read the meaning by id")
     require("SettingsOpen" in typing, "a confirmed participant sees the match before settings")
     design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
     harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
-    require("설정은 로비 메뉴에서 연다" in design, "the settings pilot is recorded")
+    require("설정은 상단 기본 버튼 바로 오른쪽에서 연다" in design, "the settings pilot is recorded")
     require("저장 완료는 저장이 성공한 뒤에만" in harness, "the settings checks are recorded")
     require("언어 한 개를 추가할 때" in harness, "adding a language has a recorded checklist")
     with (ROOT / "src/localization/CoreStrings.csv").open(encoding="utf-8", newline="") as stream:
@@ -1411,6 +1564,8 @@ def check_settings_rules():
         "Settings.Saved",
         "Settings.SaveFailed",
         "Settings.Unavailable",
+        "Settings.MusicVolume",
+        "Settings.SoundEffectsVolume",
     ):
         require(key in copy and copy[key]["Source"].strip() and copy[key]["ko"].strip(), f"Missing string {key}")
 
@@ -1548,12 +1703,12 @@ def check_rank():
     save_fn = rewards[rewards.find("local function saveLater"):rewards.find("local function grant")]
     require("if saved then" in save_fn and "RankService.noteSaved" in save_fn and "ProfileService.commit" not in save_fn, "rank follows a successful profile save")
     screen = (ROOT / "src/StarterPlayerScripts/RankScreen.luau").read_text(encoding="utf-8")
-    require("ScrollingFrame" in screen and "Rank.Close" in screen and "blockedByMatch" in screen, "the list scrolls and a match closes the popup")
+    require("ScrollingFrame" in screen and "UiChrome.closeButton(card)" in screen and "blockedByMatch" in screen, "the list scrolls and a match closes the popup")
     for banned in ("DataStore", "PlayerStore", "SetCache", "QuestionSubmit", "SettingsState.apply"):
         require(banned not in screen, f"rank UI must not call {banned}")
     lobby = (ROOT / "src/StarterPlayerScripts/LobbyHud.luau").read_text(encoding="utf-8")
     typing = (ROOT / "src/StarterPlayerScripts/TypingScreen.luau").read_text(encoding="utf-8")
-    require("RankOpen" in lobby and "Rank.Open" in lobby and "RankOpen" in typing, "rank shares the lobby menu and releases match input")
+    require("RankOpen" in lobby and "10073" in lobby and "RankOpen" in typing, "rank shares the lobby menu and releases match input")
     design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
     harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
     require("정식 경기를 끝까지 완료" in design and "아직 기록이 없습니다" in design, "the rank pilot is recorded")
@@ -1600,7 +1755,12 @@ def check_shop():
     require("ProfileService.replace" in service and "ProfileService.commit" not in service and "IsStudio" in service, "shop writes do not settle a match reward")
     require('reason == "bought"' in service and 'action == "equip"' in service, "buy and equip are different server actions")
     match = (ROOT / "src/ServerScriptService/Core/MatchService.luau").read_text(encoding="utf-8")
-    require("ArenaService.dress" in match and "ArenaService.undress" in match and "undressAll" in match and "ShopService.paintFor" in match, "assigned pads wear and then clear the saved look")
+    lock = match[match.find("local function lockParticipants"):match.find("local function returnParticipant")]
+    require("ArenaService.dress(" not in lock and "paintFor" not in lock and "ArenaService.undress" in match and "undressAll" in match, "arena pads are not painted with the equipped look")
+    floors = (ROOT / "src/ServerScriptService/Core/FloorService.luau").read_text(encoding="utf-8")
+    require("ShopService.paintFor" in floors and "payload.body" in floors and "payload.effect" in floors, "stacked floors receive the equipped look")
+    rise_visual = (ROOT / "src/StarterPlayerScripts/FloorRise.luau").read_text(encoding="utf-8")
+    require("PadLook.forStack" in rise_visual and "emitter.Enabled = effectOn" in rise_visual, "each stack pad uses the body, rim, and effect")
     screen = (ROOT / "src/StarterPlayerScripts/ShopScreen.luau").read_text(encoding="utf-8")
     require("ViewportFrame" in screen and "ScrollingFrame" in screen and "blockedByMatch" in screen, "the shop previews a pad and scrolls the list")
     close_fn = screen[screen.find("closeButton.Activated"):screen.find("buyButton.Activated")]
@@ -1609,7 +1769,7 @@ def check_shop():
         require(banned not in screen, f"shop UI must not call {banned}")
     lobby = (ROOT / "src/StarterPlayerScripts/LobbyHud.luau").read_text(encoding="utf-8")
     typing = (ROOT / "src/StarterPlayerScripts/TypingScreen.luau").read_text(encoding="utf-8")
-    require("ShopOpen" in lobby and "Shop.Open" in lobby and "ShopOpen" in typing, "shop shares the lobby menu and releases match input")
+    require("ShopOpen" in lobby and '"Shop"' in lobby and "ShopOpen" in typing, "shop shares the lobby menu and releases match input")
     design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
     harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
     require("Studio에서만 판매" in design and "한 번만 차감" in design, "the shop pilot is recorded")
@@ -1726,6 +1886,9 @@ def verify():
             ("ModuleScript", "ShopRules"),
             ("ModuleScript", "ShopLayout"),
             ("ModuleScript", "PadLook"),
+            ("ModuleScript", "FloorRules"),
+            ("ModuleScript", "FloorService"),
+            ("ModuleScript", "FloorRise"),
             ("ModuleScript", "ShopService"),
             ("ModuleScript", "ShopState"),
             ("ModuleScript", "ShopScreen"),

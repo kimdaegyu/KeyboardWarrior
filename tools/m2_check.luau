@@ -16,6 +16,7 @@ local ShopRules = require("../src/ReplicatedStorage/Shared/ShopRules")
 local RankRules = require("../src/ReplicatedStorage/Shared/RankRules")
 local RewardRules = require("../src/ReplicatedStorage/Shared/RewardRules")
 local TypingLayout = require("../src/ReplicatedStorage/Shared/TypingLayout")
+local FloorRules = require("../src/ReplicatedStorage/Shared/FloorRules")
 
 local function readSheet(path: string): {QuestionRules.SheetRow}
 	local content = string.gsub(fs.readFile(path), "\r\n", "\n")
@@ -84,6 +85,7 @@ end
 assert(scores[1] == 10 and scores[2] == 10 and scores[3] == 25, "sample scores")
 QuestionRules.selfCheck(rows, grades)
 TypingLayout.selfCheck()
+FloorRules.selfCheck()
 PracticeRules.selfCheck(rows)
 SettingsRules.selfCheck()
 SettingsLayout.selfCheck()

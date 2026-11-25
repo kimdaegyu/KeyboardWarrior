@@ -6,9 +6,9 @@ export type Plan = {
 	gap: number,
 	panelWidth: number,
 	title: number,
-	label: number,
+	stride: number,
 	row: number,
-	status: number,
+	header: number,
 	compact: boolean,
 }
 
@@ -25,39 +25,25 @@ export type ListPlan = {
 
 local SettingsLayout = {}
 
-function SettingsLayout.usedHeight(plan: Plan): number
-	local body = plan.title + plan.label * 3 + plan.row * 5 + plan.status
-	return plan.margin * 2 + body + plan.gap * 9
+function SettingsLayout.usedHeight(plan: Plan, rows: number?): number
+	local count = if rows ~= nil then rows else 6
+	return plan.margin * 2 + plan.title + plan.stride * count + plan.gap + plan.row
 end
 
 function SettingsLayout.plan(width: number, height: number, compactHeight: number?, compactWidth: number?): Plan
-	local heightLimit = if compactHeight ~= nil then compactHeight else 430
-	local widthLimit = if compactWidth ~= nil then compactWidth else 760
-	local compact = height <= heightLimit or width <= widthLimit
-	local margin = if compact then 8 else 20
-	local gap = 4
-	local title = if compact then 20 else 32
-	local label = if compact then 14 else 22
-	local row = if compact then 36 else 44
-	local status = if compact then 14 else 22
-	local plan: Plan = {
-		margin = margin,
-		gap = gap,
-		panelWidth = math.min(math.max(0, width - margin * 2), 520),
-		title = title,
-		label = label,
-		row = row,
-		status = status,
+	local compact = height <= (compactHeight or 430) or width <= (compactWidth or 760)
+	local scale = math.min(width / 1672, height / 941, 1)
+	local row = math.max(if compact then 36 else 44, math.round(54 * scale))
+	return {
 		compact = compact,
+		panelWidth = math.min(width - 16, math.max(if compact then width * 0.82 else 560, math.round(1030 * scale))),
+		header = math.max(28, math.round(66 * scale)),
+		margin = math.max(9, math.round(38 * scale)),
+		gap = math.max(4, math.round(16 * scale)),
+		title = math.max(row, math.round(56 * scale)),
+		stride = math.max(row + 4, math.round(98 * scale)),
+		row = row,
 	}
-	local overflow = SettingsLayout.usedHeight(plan) - height
-	if overflow > 0 then
-		plan.row = math.max(28, row - overflow)
-		plan.title = math.max(20, title - math.floor(overflow / 4))
-		plan.label = math.max(14, label - math.floor(overflow / 8))
-		plan.status = plan.label
-	end
-	return plan
 end
 
 function SettingsLayout.listPlan(width: number, height: number, count: number, compactHeight: number?, compactWidth: number?): ListPlan
@@ -83,12 +69,18 @@ end
 
 function SettingsLayout.selfCheck()
 	local phone = SettingsLayout.plan(568, 320)
-	assert(phone.compact and phone.row == 36 and phone.title == 20, "phone settings keep a tappable row")
-	local used = SettingsLayout.usedHeight(phone)
-	assert(used <= 320, "568×320 shows apply and close")
-	assert(phone.margin + phone.title + phone.gap + phone.label + phone.gap + phone.row > phone.margin, "the language choices sit under the title")
+	assert(phone.compact and phone.row == 36 and phone.title == phone.row, "phone settings keep a tappable row")
+	local rows = 6
+	local used = SettingsLayout.usedHeight(phone, rows)
+	local card = math.min(used, 320 - 12)
+	local header = phone.margin + phone.title
+	local view = card - header
+	local canvas = used - header
+	local applyTop = rows * phone.stride + phone.gap
+	assert(view < canvas and applyTop + phone.row <= canvas, "568×320 scrolls to apply while the header stays put")
+	assert(phone.stride >= phone.row, "the language choices sit under the title")
 	local desktop = SettingsLayout.plan(1366, 768)
-	assert(not desktop.compact and desktop.row > phone.row and SettingsLayout.usedHeight(desktop) < 768, "a wide settings panel has taller rows")
+	assert(not desktop.compact and desktop.row > phone.row and SettingsLayout.usedHeight(desktop, rows) < 768, "a wide settings panel has taller rows")
 	local dozen = SettingsLayout.listPlan(568, 320, 12)
 	assert(dozen.scrolls, "twelve languages scroll inside the list")
 	assert(dozen.margin * 2 + dozen.listHeight + dozen.gap + dozen.back <= 320, "back stays on a 568×320 list")

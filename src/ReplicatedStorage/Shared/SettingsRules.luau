@@ -6,6 +6,8 @@ export type Profile = {
 	gold: number,
 	exp: number,
 	bestScore: number,
+	bestScoreCpm: number?,
+	bestScoreLanguage: string?,
 	grants: {string}?,
 	uiLocale: string?,
 	gloss: string?,
@@ -16,6 +18,8 @@ export type Profile = {
 	body: string?,
 	rim: string?,
 	effect: string?,
+	bgmVolume: number?,
+	sfxVolume: number?,
 }
 
 export type Row = {
@@ -184,7 +188,36 @@ function SettingsRules.sessionTyping(languages: {Language}, saved: any, mobile: 
 	return preference
 end
 
-function SettingsRules.apply(profile: Profile, languages: {Language}, uiLocale: any, gloss: any, typing: any): (Profile?, string)
+function SettingsRules.volume(value: any): number?
+	if type(value) ~= "number" or value ~= math.floor(value) then
+		return nil
+	end
+	if value < 0 or value > 100 or value % 5 ~= 0 then
+		return nil
+	end
+	return value
+end
+
+function SettingsRules.shownVolume(value: any): number
+	local parsed = SettingsRules.volume(value)
+	if value == nil or parsed == nil then
+		return 100
+	end
+	return parsed
+end
+
+local function resolvedVolume(stored: any, requested: any): number?
+	if requested == nil then
+		if stored == nil then
+			return 100
+		end
+		local kept = SettingsRules.volume(stored)
+		return if kept == nil then 100 else kept
+	end
+	return SettingsRules.volume(requested)
+end
+
+function SettingsRules.apply(profile: Profile, languages: {Language}, uiLocale: any, gloss: any, typing: any, bgmVolume: any, sfxVolume: any): (Profile?, string)
 	if type(uiLocale) ~= "string" or SettingsRules.shownUi(languages, uiLocale) ~= uiLocale then
 		return nil, "invalid"
 	end
@@ -192,6 +225,11 @@ function SettingsRules.apply(profile: Profile, languages: {Language}, uiLocale: 
 		return nil, "invalid"
 	end
 	if type(typing) ~= "string" or SettingsRules.shownTyping(languages, typing) ~= typing then
+		return nil, "invalid"
+	end
+	local bgm = resolvedVolume(profile.bgmVolume, bgmVolume)
+	local sfx = resolvedVolume(profile.sfxVolume, sfxVolume)
+	if bgm == nil or sfx == nil then
 		return nil, "invalid"
 	end
 	local grants: {string} = {}
@@ -205,10 +243,14 @@ function SettingsRules.apply(profile: Profile, languages: {Language}, uiLocale: 
 		gold = profile.gold,
 		exp = profile.exp,
 		bestScore = profile.bestScore,
+		bestScoreCpm = profile.bestScoreCpm,
+		bestScoreLanguage = profile.bestScoreLanguage,
 		grants = grants,
 		uiLocale = uiLocale,
 		gloss = gloss,
 		typing = typing,
+		bgmVolume = bgm,
+		sfxVolume = sfx,
 	}
 	if type(profile.tutorialSeen) == "boolean" then
 		updated.tutorialSeen = profile.tutorialSeen
@@ -312,6 +354,8 @@ function SettingsRules.selfCheck()
 		gold = profile.gold,
 		exp = profile.exp,
 		bestScore = profile.bestScore,
+		bestScoreCpm = profile.bestScoreCpm,
+		bestScoreLanguage = profile.bestScoreLanguage,
 		grants = profile.grants,
 		tutorialSeen = true,
 		ranked = true,
@@ -321,6 +365,17 @@ function SettingsRules.selfCheck()
 	local kept, keptReason = SettingsRules.apply(seenProfile, loaded, "ko", "off", "ko")
 	assert(keptReason == "ok" and kept ~= nil and kept.tutorialSeen == true and kept.ranked == true and kept.typing == "ko" and kept.gold == 4, "a language save keeps the tutorial flag")
 	assert(kept.owned ~= nil and kept.owned[1] == "pilot_body" and kept.body == "pilot_body", "a language save keeps the shop")
+	assert(SettingsRules.shownVolume(nil) == 100 and SettingsRules.volume(0) == 0 and SettingsRules.volume(100) == 100, "missing volume is full and mute is stored")
+	assert(SettingsRules.volume(7) == nil and SettingsRules.volume(50.5) == nil and SettingsRules.volume(true) == nil and SettingsRules.volume(-5) == nil, "volume rejects a bad step, fraction, type, or range")
+	local muted, muteReason = SettingsRules.apply(profile, loaded, "ko", "off", "en", 0, 100)
+	assert(muteReason == "ok" and muted ~= nil and muted.bgmVolume == 0 and muted.sfxVolume == 100 and muted.gold == 4, "mute is a saved volume")
+	local half, halfReason = SettingsRules.apply(muted :: Profile, loaded, "ko", "off", "en", 50, 0)
+	assert(halfReason == "ok" and half ~= nil and half.bgmVolume == 50 and half.sfxVolume == 0, "one volume can change")
+	local keptVolume, keptVolumeReason = SettingsRules.apply(half :: Profile, loaded, "auto", "off", "en")
+	assert(keptVolumeReason == "ok" and keptVolume ~= nil and keptVolume.bgmVolume == 50 and keptVolume.sfxVolume == 0, "an older language request keeps the volumes")
+	local freshVolume, freshReason = SettingsRules.apply(profile, loaded, "auto", "off", "en")
+	assert(freshReason == "ok" and freshVolume ~= nil and freshVolume.bgmVolume == 100 and freshVolume.sfxVolume == 100, "a profile without volumes starts full")
+	assert(SettingsRules.apply(profile, loaded, "ko", "off", "en", 10, 3) == nil and profile.gold == 4, "a bad volume step is rejected")
 end
 
 return SettingsRules

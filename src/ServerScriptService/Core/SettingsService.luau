@@ -32,6 +32,8 @@ local function payload(userId: number, saveState: string)
 		uiLocale = if profile ~= nil then SettingsRules.shownUi(languages, profile.uiLocale) else "auto",
 		gloss = if profile ~= nil then SettingsRules.shownGloss(languages, profile.gloss) else "off",
 		typing = SettingsRules.shownTyping(languages, if profile ~= nil then profile.typing else nil),
+		bgmVolume = SettingsRules.shownVolume(if profile ~= nil then profile.bgmVolume else nil),
+		sfxVolume = SettingsRules.shownVolume(if profile ~= nil then profile.sfxVolume else nil),
 		saveState = saveState,
 	}
 end
@@ -79,7 +81,7 @@ function SettingsService.start()
 			push(player, "loading")
 		end
 	end)
-	apply.OnServerEvent:Connect(function(player: Player, uiLocale: any, gloss: any, typing: any)
+	apply.OnServerEvent:Connect(function(player: Player, uiLocale: any, gloss: any, typing: any, bgmVolume: any, sfxVolume: any)
 		if typeof(uiLocale) ~= "string" or typeof(gloss) ~= "string" or typeof(typing) ~= "string" then
 			return
 		end
@@ -87,7 +89,7 @@ function SettingsService.start()
 			push(player, "unavailable")
 			return
 		end
-		local ok, applyReason = ProfileService.applySettings(player.UserId, uiLocale, gloss, typing, languages)
+		local ok, applyReason = ProfileService.applySettings(player.UserId, uiLocale, gloss, typing, languages, bgmVolume, sfxVolume)
 		if not ok then
 			push(player, if applyReason == "unavailable" then "unavailable" else "failed")
 			return

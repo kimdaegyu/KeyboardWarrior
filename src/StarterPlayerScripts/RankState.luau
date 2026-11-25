@@ -8,6 +8,8 @@ export type Row = {
 	name: string,
 	score: number,
 	rank: number,
+	cpm: number?,
+	language: string?,
 }
 
 local RankState = {}
@@ -17,6 +19,8 @@ local rows: {Row} = {}
 local recorded = false
 local bestScore: number? = nil
 local received = false
+local bestScoreLanguage: string? = nil
+local bestScoreCpm: number? = nil
 local started = false
 local requestRemote: RemoteEvent? = nil
 local listeners: {() -> ()} = {}
@@ -57,6 +61,14 @@ function RankState.onChanged(listener: () -> ()): () -> ()
 	end
 end
 
+function RankState.bestScoreLanguage(): string?
+	return bestScoreLanguage
+end
+
+function RankState.bestScoreCpm(): number?
+	return bestScoreCpm
+end
+
 function RankState.request()
 	if not received or (status == "failed" and #rows == 0) then
 		status = "loading"
@@ -79,6 +91,8 @@ local function onState(message: any)
 				userId = row.userId,
 				name = if type(row.name) == "string" then row.name else tostring(row.userId),
 				score = row.score,
+				language = if type(row.language) == "string" then row.language else nil,
+				cpm = if type(row.cpm) == "number" then row.cpm else nil,
 				rank = row.rank,
 			})
 		end
@@ -87,6 +101,8 @@ local function onState(message: any)
 	status = message.status
 	rows = nextRows
 	recorded = message.recorded == true
+	bestScoreLanguage = if recorded and type(message.bestScoreLanguage) == "string" then message.bestScoreLanguage else nil
+	bestScoreCpm = if recorded and type(message.bestScoreCpm) == "number" then message.bestScoreCpm else nil
 	bestScore = if recorded and type(message.bestScore) == "number" then message.bestScore else nil
 	fire()
 end

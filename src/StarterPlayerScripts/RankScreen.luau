@@ -4,11 +4,11 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local Localization = require(ReplicatedStorage.Shared.Localization)
 local PracticeRules = require(ReplicatedStorage.Shared.PracticeRules)
 local RankLayout = require(ReplicatedStorage.Shared.RankLayout)
 local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
+local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local RankState = require(script.Parent.RankState)
 
 local RankScreen = {}
@@ -25,19 +25,20 @@ function RankScreen.bind(root: Frame): () -> ()
 	screen.ZIndex = 3
 	screen.Parent = root
 
-	local card = Instance.new("Frame")
-	card.Name = "Card"
-	card.AnchorPoint = Vector2.new(0.5, 0.5)
-	card.Position = UDim2.fromScale(0.5, 0.5)
-	card.BackgroundColor3 = UiChrome.White
-	card.BorderSizePixel = 0
-	card.ZIndex = 4
-	card.Parent = screen
-	local cardCorner = Instance.new("UICorner")
-	cardCorner.CornerRadius = UDim.new(0, 10)
-	cardCorner.Parent = card
+	local function surface(name: string): Frame
+		local frame = Instance.new("Frame")
+		frame.Name = name
+		frame.ZIndex = 4
+		frame.Parent = screen
+		UiChrome.paint(frame, "panel")
+		local outline = frame:FindFirstChildOfClass("UIStroke")
+		if outline then outline.Color = UiChrome.Navy end
+		return frame
+	end
+	local personal = surface("PersonalRecord")
+	local card = surface("Leaderboard")
 
-	local function label(name: string, xAlign: Enum.TextXAlignment): TextLabel
+	local function label(name: string, xAlign: Enum.TextXAlignment, parent: GuiObject?): TextLabel
 		local item = Instance.new("TextLabel")
 		item.Name = name
 		item.BackgroundTransparency = 1
@@ -47,16 +48,53 @@ function RankScreen.bind(root: Frame): () -> ()
 		item.TextYAlignment = Enum.TextYAlignment.Center
 		item.TextTruncate = Enum.TextTruncate.AtEnd
 		item.ZIndex = 5
-		item.Parent = card
+		item.Parent = parent or card
 		return item
 	end
 
-	local titleLabel = label("Title", Enum.TextXAlignment.Center)
-	local mineLabel = label("Mine", Enum.TextXAlignment.Center)
+	local left = Enum.TextXAlignment.Left
+	local titleLabel = label("Title", left)
+	titleLabel.Font = Enum.Font.GothamBold
+	local trophy = UiChrome.icon(card, 10073)
+	local portrait = UiChrome.icon(personal, 10071)
+	local recordTitle = label("RecordTitle", left, personal)
+	local personalLanguage = label("Language", Enum.TextXAlignment.Right, personal)
+	local position = label("MyPosition", left, personal)
+	position.Font = Enum.Font.GothamBold
+	position.TextScaled = true
+	local positionFont = Instance.new("UITextSizeConstraint")
+	positionFont.MinTextSize = 11
+	positionFont.Parent = position
+	local bestTitle = label("BestTitle", left, personal)
+	local mineLabel = label("BestValue", left, personal)
 	mineLabel.Font = Enum.Font.GothamBold
-	local placeLabel = label("Place", Enum.TextXAlignment.Left)
-	local playerLabel = label("Player", Enum.TextXAlignment.Left)
-	local scoreLabel = label("Score", Enum.TextXAlignment.Right)
+	mineLabel.TextScaled = true
+	local bestFont = Instance.new("UITextSizeConstraint")
+	bestFont.MinTextSize = 10
+	bestFont.Parent = mineLabel
+	local personalCpmTitle = label("CpmTitle", left, personal)
+	local personalCpm = mineLabel:Clone()
+	personalCpm.Name = "CpmValue"
+	personalCpm.Parent = personal
+	local cpmFont = personalCpm:FindFirstChildOfClass("UITextSizeConstraint") :: UITextSizeConstraint
+	local placeLabel = label("Place", left)
+	local playerLabel = label("Player", left)
+	local scoreLabel = label("Score", left)
+	local languageLabel = label("Language", left)
+	local cpmLabel = label("Cpm", left)
+	for _, heading in { placeLabel, playerLabel, scoreLabel, cpmLabel, languageLabel } do
+		heading.TextColor3 = UiChrome.Blue
+	end
+	local function divider(parent: GuiObject)
+		local line = Instance.new("Frame")
+		line.BorderSizePixel = 0
+		line.BackgroundColor3 = Color3.fromRGB(215, 228, 250)
+		line.Size = UDim2.new(1, 0, 0, 1)
+		line.Position = UDim2.new(0, 0, 1, -1)
+		line.Parent = parent
+		return line
+	end
+	local headingRule = divider(card)
 
 	local list = Instance.new("ScrollingFrame")
 	list.Name = "Rows"
@@ -71,7 +109,7 @@ function RankScreen.bind(root: Frame): () -> ()
 	list.Parent = card
 	local layout = Instance.new("UIListLayout")
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 4)
+	layout.Padding = UDim.new(0, 0)
 	layout.Parent = list
 
 	local notice = Instance.new("TextLabel")
@@ -86,19 +124,7 @@ function RankScreen.bind(root: Frame): () -> ()
 	notice.ZIndex = 6
 	notice.Parent = list
 
-	local closeButton = Instance.new("TextButton")
-	closeButton.Name = "Close"
-	closeButton.Font = Enum.Font.GothamMedium
-	closeButton.TextColor3 = UiChrome.Navy
-	closeButton.BackgroundColor3 = UiChrome.White
-	closeButton.BorderSizePixel = 0
-	closeButton.AutoButtonColor = false
-	closeButton.TextTruncate = Enum.TextTruncate.AtEnd
-	closeButton.ZIndex = 5
-	closeButton.Parent = card
-	local closeCorner = Instance.new("UICorner")
-	closeCorner.CornerRadius = UDim.new(0, 6)
-	closeCorner.Parent = closeButton
+	local closeButton = UiChrome.closeButton(card)
 
 	local rowFrames: {Frame} = {}
 
@@ -115,9 +141,10 @@ function RankScreen.bind(root: Frame): () -> ()
 		row.LayoutOrder = index
 		row.ZIndex = 6
 		row.Parent = list
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 6)
-		corner.Parent = row
+		UiChrome.round(row, 6)
+		local line = divider(row)
+		line.Position = UDim2.new(0, 6, 1, -1)
+		line.Size = UDim2.new(1, -12, 0, 1)
 		local function cell(cellName: string, align: Enum.TextXAlignment): TextLabel
 			local item = Instance.new("TextLabel")
 			item.Name = cellName
@@ -131,98 +158,97 @@ function RankScreen.bind(root: Frame): () -> ()
 			item.Parent = row
 			return item
 		end
-		cell("Place", Enum.TextXAlignment.Center)
+		cell("Place", left)
 		cell("Name", Enum.TextXAlignment.Left)
-		cell("Score", Enum.TextXAlignment.Right)
+		cell("Score", left)
+		cell("Cpm", left)
+		cell("Language", left)
 		rowFrames[index] = row
 		return row
 	end
 
 	local function applyLayout()
 		local size = root.AbsoluteSize
-		local height = math.max(0, size.Y - 16)
-		if height > constants.UI.CompactHeight and size.X > constants.UI.CompactWidth then
-			height = math.min(height, 640)
+		if size.X < 100 or size.Y < 140 then return end
+		local p = RankLayout.plan(size.X, size.Y)
+		local function box(gui: GuiObject, x: number, y: number, w: number, h: number)
+			gui.Position = UDim2.fromOffset(x, y)
+			gui.Size = UDim2.fromOffset(w, h)
 		end
-		local plan = RankLayout.plan(size.X, height, constants.UI.CompactHeight, constants.UI.CompactWidth)
-		plan.panelWidth = math.min(plan.panelWidth, 560)
-		card.Size = UDim2.fromOffset(plan.panelWidth, height)
-		UiChrome.paint(card, "panel")
-		local inner = plan.panelWidth - plan.margin * 2
-		local y = plan.margin
-		titleLabel.Position = UDim2.fromOffset(plan.margin, y)
-		titleLabel.Size = UDim2.fromOffset(inner, plan.title)
-		titleLabel.TextSize = math.clamp(plan.title - 2, 14, 28)
-		y += plan.title + plan.gap
-		mineLabel.Position = UDim2.fromOffset(plan.margin, y)
-		mineLabel.Size = UDim2.fromOffset(inner, plan.mine)
-		mineLabel.TextSize = math.clamp(plan.mine - 12, 13, 20)
-		y += plan.mine + plan.gap
-		local placeWidth = if plan.compact then 48 else 64
-		local scoreWidth = if plan.compact then 84 else 108
-		placeLabel.Position = UDim2.fromOffset(plan.margin, y)
-		placeLabel.Size = UDim2.fromOffset(placeWidth, plan.header)
-		playerLabel.Position = UDim2.fromOffset(plan.margin + placeWidth, y)
-		playerLabel.Size = UDim2.fromOffset(math.max(0, inner - placeWidth - scoreWidth), plan.header)
-		scoreLabel.Position = UDim2.fromOffset(plan.margin + inner - scoreWidth, y)
-		scoreLabel.Size = UDim2.fromOffset(scoreWidth, plan.header)
-		placeLabel.TextSize = math.clamp(plan.header - 2, 11, 16)
-		playerLabel.TextSize = placeLabel.TextSize
-		scoreLabel.TextSize = placeLabel.TextSize
-		y += plan.header + plan.gap
-		list.Position = UDim2.fromOffset(plan.margin, y)
-		list.Size = UDim2.fromOffset(inner, plan.listHeight)
-		notice.Size = UDim2.new(1, -8, 0, math.max(plan.row * 2, 36))
+		box(personal, p.left, p.top, p.personal, p.personalHeight)
+		box(card, p.left + p.personal + p.gap, p.top, p.board, p.height)
+		local inner = p.board - 2 * p.pad
+		local side = p.personal - 2 * p.pad
+		local icon = math.max(19, math.round(p.row * 0.8))
+		local block = p.personalHeight - 2 * p.pad
+		box(portrait, p.pad, p.pad, icon, icon)
+		box(recordTitle, p.pad + icon + 5, p.pad, side - icon - 5, icon)
+		recordTitle.TextSize = math.max(13, math.round(p.row * 0.55))
+		box(position, p.pad, p.pad + icon, side * 0.65, block * 0.42)
+		box(personalLanguage, p.pad + side * 0.66, p.pad + icon, side * 0.34, block * 0.42)
+		personalLanguage.TextSize = recordTitle.TextSize
+		positionFont.MaxTextSize = math.max(24, math.round(block * 0.26))
+		box(bestTitle, p.pad, p.pad + block * 0.62, side * 0.54, block * 0.15)
+		bestTitle.TextSize = math.max(12, math.round(p.row * 0.44))
+		box(mineLabel, p.pad, p.pad + block * 0.77, side * 0.54, block * 0.23)
+		bestFont.MaxTextSize = math.max(17, math.round(block * 0.17))
+		box(personalCpmTitle, p.pad + side * 0.55, p.pad + block * 0.62, side * 0.45, block * 0.15)
+		personalCpmTitle.TextSize = bestTitle.TextSize
+		box(personalCpm, p.pad + side * 0.55, p.pad + block * 0.77, side * 0.45, block * 0.23)
+		cpmFont.MaxTextSize = bestFont.MaxTextSize
+		box(trophy, p.pad, p.pad + (p.title - icon) / 2, icon, icon)
+		box(titleLabel, p.pad + icon + 8, p.pad, inner - icon - 20 - p.close, p.title)
+		titleLabel.TextSize = math.max(20, math.round(p.row * 0.86))
+		local headerY = p.pad + p.title
+		local function columns(place: TextLabel, name: TextLabel, score: TextLabel, cpm: TextLabel, language: TextLabel, x: number, y: number, h: number)
+			local available = inner - 8
+			local first = math.floor(available * 0.13)
+			local second = math.floor(available * 0.34)
+			box(place, x + 4, y, first - 4, h)
+			box(name, x + first, y, second - 3, h)
+			local third = math.floor(available * 0.21)
+			box(score, x + first + second, y, third, h)
+			local fourth = math.floor(available * 0.16)
+			box(cpm, x + first + second + third, y, fourth, h)
+			box(language, x + first + second + third + fourth, y, available - first - second - third - fourth, h)
+			for _, cell in {place, name, score, cpm, language} do
+				cell.TextSize = math.max(12, math.round(p.row * 0.39))
+			end
+		end
+		columns(placeLabel, playerLabel, scoreLabel, cpmLabel, languageLabel, p.pad, headerY, p.columns)
+		box(headingRule, p.pad, headerY + p.columns - 1, inner - 8, 1)
+		box(list, p.pad, headerY + p.columns, inner, p.listHeight)
+		notice.Size = UDim2.new(1, -8, 0, p.row * 2)
 		notice.TextSize = placeLabel.TextSize
 		for _, row in rowFrames do
-			row.Size = UDim2.new(1, -8, 0, plan.row)
-			local mineRow = row:GetAttribute("Mine") == true
-			UiChrome.paint(row, if mineRow then "selected" else "panel")
-			local ink = UiChrome.ink(if mineRow then "selected" else "panel")
-			local placeInk = row:FindFirstChild("Place")
-			local nameInk = row:FindFirstChild("Name")
-			local scoreInk = row:FindFirstChild("Score")
-			if placeInk ~= nil and placeInk:IsA("TextLabel") then
-				placeInk.TextColor3 = ink
-			end
-			if nameInk ~= nil and nameInk:IsA("TextLabel") then
-				nameInk.TextColor3 = ink
-			end
-			if scoreInk ~= nil and scoreInk:IsA("TextLabel") then
-				scoreInk.TextColor3 = ink
-			end
-			local placeCell = row:FindFirstChild("Place") :: TextLabel
-			local nameCell = row:FindFirstChild("Name") :: TextLabel
-			local scoreCell = row:FindFirstChild("Score") :: TextLabel
-			placeCell.Size = UDim2.fromOffset(placeWidth, plan.row)
-			nameCell.Position = UDim2.fromOffset(placeWidth, 0)
-			nameCell.Size = UDim2.fromOffset(math.max(0, inner - 8 - placeWidth - scoreWidth), plan.row)
-			scoreCell.Position = UDim2.fromOffset(inner - 8 - scoreWidth, 0)
-			scoreCell.Size = UDim2.fromOffset(scoreWidth, plan.row)
-			placeCell.TextSize = placeLabel.TextSize
-			nameCell.TextSize = placeLabel.TextSize
-			scoreCell.TextSize = placeLabel.TextSize
+			row.Size = UDim2.new(1, -8, 0, p.row)
+			columns(row:FindFirstChild("Place") :: TextLabel, row:FindFirstChild("Name") :: TextLabel, row:FindFirstChild("Score") :: TextLabel, row:FindFirstChild("Cpm") :: TextLabel, row:FindFirstChild("Language") :: TextLabel, 0, 0, p.row)
 		end
-		y += plan.listHeight + plan.gap
-		closeButton.Position = UDim2.fromOffset(plan.margin, y)
-		closeButton.Size = UDim2.fromOffset(inner, plan.close)
-		UiChrome.paint(closeButton, "panel")
-		closeButton.TextSize = math.clamp(plan.close - 16, 13, 20)
+		box(closeButton, p.board - p.pad, p.pad, p.close, p.close)
+	end
+
+	local function formatScore(score: number): string
+		local digits = tostring(score):reverse():gsub("(%d%d%d)", "%1,")
+		local formatted = digits:reverse():gsub("^,", "")
+		return formatted
 	end
 
 	local function render()
 		titleLabel.Text = Localization.getText("Rank.Title")
-		closeButton.Text = Localization.getText("Rank.Close")
+		cpmLabel.Text = Localization.getText("Rank.Cpm")
+		languageLabel.Text = Localization.getText("Rank.Language")
+		personalLanguage.Text = RankState.bestScoreLanguage() or "—"
+		personalCpmTitle.Text = cpmLabel.Text
+		local cpm = RankState.bestScoreCpm()
+		personalCpm.Text = if cpm ~= nil then formatScore(cpm) else "—"
 		placeLabel.Text = Localization.getText("Rank.Place")
 		playerLabel.Text = Localization.getText("Rank.Player")
 		scoreLabel.Text = Localization.getText("Rank.Score")
-		if not RankState.received() then
-			mineLabel.Text = Localization.getText("Rank.Loading")
-		elseif not RankState.recorded() then
-			mineLabel.Text = Localization.getText("Rank.None")
-		else
-			mineLabel.Text = Localization.getText("Rank.Mine", nil, { score = RankState.bestScore() or 0 })
-		end
+		recordTitle.Text = Localization.getText("Rank.RecordTitle")
+		bestTitle.Text = Localization.getText("Rank.Score")
+		local best = RankState.bestScore()
+		mineLabel.Text = if best ~= nil then formatScore(best) else "—"
+		position.Text = "—"
 		local board = RankState.status()
 		local showRows = RankState.received() and (board == "ready" or board == "stale")
 		local noticeKey = if board == "stale"
@@ -234,17 +260,33 @@ function RankScreen.bind(root: Frame): () -> ()
 		notice.Text = Localization.getText(noticeKey)
 		local mine = Players.LocalPlayer.UserId
 		local entries = if showRows then RankState.rows() else {}
+		local onBoard = false
 		for index, entry in entries do
 			local row = ensureRow(index)
 			row.Visible = true
 			local mineRow = entry.userId == mine
-			row:SetAttribute("Mine", mineRow)
+			row.BackgroundTransparency = if mineRow then 0 else 1
+			row.BackgroundColor3 = Color3.fromRGB(229, 238, 255)
 			local placeCell = row:FindFirstChild("Place") :: TextLabel
 			local nameCell = row:FindFirstChild("Name") :: TextLabel
 			local scoreCell = row:FindFirstChild("Score") :: TextLabel
-			placeCell.Text = tostring(entry.rank)
-			nameCell.Text = entry.name
-			scoreCell.Text = tostring(entry.score)
+			placeCell.Text = Localization.getText("Rank.Ordinal", nil, { rank = entry.rank })
+			if mineRow then
+				onBoard = true
+				position.Text = placeCell.Text
+			end
+			nameCell.Text = if mineRow then Localization.getText("Rank.SelfName", nil, { name = entry.name }) else entry.name
+			local languageCell = row:FindFirstChild("Language") :: TextLabel
+			languageCell.Text = entry.language or "—"
+			local cpmCell = row:FindFirstChild("Cpm") :: TextLabel
+			cpmCell.Text = if entry.cpm ~= nil then formatScore(entry.cpm) else "—"
+			scoreCell.Text = formatScore(entry.score)
+		end
+		if RankState.recorded() and not onBoard and board == "ready" and #entries >= constants.Rank.TopCount then
+			position.Text = Localization.getText("Rank.Outside", nil, { count = constants.Rank.TopCount })
+		end
+		if RankState.received() and not RankState.recorded() then
+			mineLabel.Text = Localization.getText("Rank.None")
 		end
 		for index = #entries + 1, #rowFrames do
 			rowFrames[index].Visible = false
@@ -257,12 +299,13 @@ function RankScreen.bind(root: Frame): () -> ()
 		local phaseName = if folder ~= nil then folder:GetAttribute("Phase") else nil
 		local phase = if type(phaseName) == "string" then phaseName else ""
 		local open = root:GetAttribute("RankOpen") == true
-		if open and PracticeRules.blockedByMatch(Players.LocalPlayer:GetAttribute("InMatch") == true, phase) then
+		if open and PracticeRules.blockedByMatch(Players.LocalPlayer:GetAttribute("InMatch") == true, phase, root:GetAttribute("ResultDismissed") == true) then
 			screen.Visible = false
 			root:SetAttribute("RankOpen", false)
 			return
 		end
 		if open and not screen.Visible then
+			list.CanvasPosition = Vector2.zero
 			RankState.request()
 		end
 		screen.Visible = open

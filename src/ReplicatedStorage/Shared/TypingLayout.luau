@@ -15,8 +15,6 @@ export type Plan = {
 	textSize: number,
 	inputTextSize: number,
 	compact: boolean,
-	rankMode: string,
-	rankWidth: number,
 	questionWidth: number,
 	viewGap: number,
 	viewLane: number,
@@ -24,11 +22,11 @@ export type Plan = {
 
 local TypingLayout = {}
 
-function TypingLayout.plan(width: number, height: number, showKeys: boolean, compactHeight: number?, compactWidth: number?): Plan
+function TypingLayout.plan(width: number, height: number, showKeys: boolean, compactHeight: number?, compactWidth: number?, outerMargin: number?): Plan
 	local heightLimit = if compactHeight ~= nil then compactHeight else 430
 	local widthLimit = if compactWidth ~= nil then compactWidth else 760
 	local compact = height <= heightLimit or width <= widthLimit
-	local margin = if compact then 6 else 16
+	local margin = outerMargin or (if compact then 6 else 16)
 	local gap = 4
 	local timeHeight = if compact then 22 else 32
 	local inputHeight = if compact then 28 else 40
@@ -61,16 +59,19 @@ function TypingLayout.plan(width: number, height: number, showKeys: boolean, com
 		room = height - margin * 2 - timeHeight - inputHeight - gap * 2 - keyBlock
 		questionHeight = math.min(questionCap, math.max(0, room))
 	end
+	-- Scale only the match HUD after budgeting the keyboard rows.
+	timeHeight = math.round(timeHeight * 0.8)
+	inputHeight = math.round(inputHeight * 0.8)
+	questionHeight = math.round(questionHeight * 0.8)
 	local blockHeight = timeHeight + questionHeight + inputHeight + gap * 2
-	local inner = math.max(0, width - margin * 2)
-	local rankWidth = 0
-	local questionWidth = inner
-	local rankMode = "drawer"
-	if not compact and inner > 0 then
-		rankMode = "side"
-		rankWidth = math.clamp(math.floor(inner * 0.28), 220, 340)
-		questionWidth = math.max(0, inner - rankWidth - gap)
+	local viewRoom = height - (margin * 2 + blockHeight + keyBlock)
+	if compact and timeHeight < 36 and viewRoom >= 36 - timeHeight then
+		local extra = 36 - timeHeight
+		timeHeight += extra
+		blockHeight += extra
 	end
+	local inner = math.max(0, width - margin * 2)
+	local questionWidth = inner
 	local viewLane = 0
 	if compact and showKeys and questionWidth > 360 then
 		viewLane = questionWidth - 360
@@ -91,8 +92,6 @@ function TypingLayout.plan(width: number, height: number, showKeys: boolean, com
 		textSize = math.clamp(math.floor(questionHeight * 0.42), 14, 36),
 		inputTextSize = math.clamp(inputHeight - 8, 12, 28),
 		compact = compact,
-		rankMode = rankMode,
-		rankWidth = rankWidth,
 		questionWidth = questionWidth,
 		viewGap = viewGap,
 		viewLane = viewLane,
@@ -114,11 +113,11 @@ export type PracticePlan = {
 	compact: boolean,
 }
 
-function TypingLayout.practicePlan(width: number, height: number, showKeys: boolean, compactHeight: number?, compactWidth: number?): PracticePlan
+function TypingLayout.practicePlan(width: number, height: number, showKeys: boolean, compactHeight: number?, compactWidth: number?, outerMargin: number?): PracticePlan
 	local heightLimit = if compactHeight ~= nil then compactHeight else 430
 	local widthLimit = if compactWidth ~= nil then compactWidth else 760
 	local compact = height <= heightLimit or width <= widthLimit
-	local margin = if compact then 6 else 16
+	local margin = outerMargin or (if compact then 6 else 16)
 	local gap = 4
 	local toolbarHeight = if compact then 36 else 44
 	local inputHeight = if compact then 28 else 40
@@ -161,6 +160,10 @@ function TypingLayout.practicePlan(width: number, height: number, showKeys: bool
 	}
 end
 
+function TypingLayout.matchDetailHeight(questionHeight: number): number
+	return math.round(questionHeight * 0.38)
+end
+
 function TypingLayout.glossBand(questionHeight: number, shown: boolean): number
 	if not shown or questionHeight < 48 then
 		return 0
@@ -187,18 +190,18 @@ function TypingLayout.selfCheck()
 	assert(phone.showKeys and phone.keyRows == 4)
 	assert(phone.rowHeight == 36, `phone row {phone.rowHeight}`)
 	assert(phone.keyBlock == 156, `phone keys {phone.keyBlock}`)
-	assert(phone.questionHeight == 64, `phone question {phone.questionHeight}`)
-	assert(phone.inputHeight == 28 and phone.timeHeight == 22)
-	assert(phone.rankMode == "drawer" and phone.rankWidth == 0 and phone.questionWidth == 360)
+	assert(phone.questionHeight == 51, `phone question {phone.questionHeight}`)
+	assert(phone.inputHeight == 22 and phone.timeHeight == 36)
+	assert(phone.questionWidth == 360)
 	assert(phone.viewLane == 196, `phone arena lane {phone.viewLane}`)
-	assert(phone.viewGap == 30, `phone arena gap {phone.viewGap}`)
+	assert(phone.viewGap == 35, `phone arena gap {phone.viewGap}`)
 	assert(TypingLayout.usedHeight(phone) + phone.viewGap == 320, "568×320 keeps the prompt, keys, and an arena gap")
 
 	local desktop = TypingLayout.plan(1366, 768, false)
 	assert(not desktop.showKeys and desktop.keyBlock == 0)
-	assert(desktop.questionHeight == 112, `desktop question {desktop.questionHeight}`)
-	assert(desktop.viewLane == 0 and desktop.viewGap == 544, `desktop arena gap {desktop.viewGap}`)
-	assert(desktop.rankMode == "side" and desktop.rankWidth == 340 and desktop.questionWidth == 990)
+	assert(desktop.questionHeight == 90, `desktop question {desktop.questionHeight}`)
+	assert(desktop.viewLane == 0 and desktop.viewGap == 580, `desktop arena gap {desktop.viewGap}`)
+	assert(desktop.questionWidth == 1366 - 2 * desktop.margin)
 	assert(desktop.questionHeight > phone.questionHeight, "a physical keyboard gives the prompt more room")
 	assert(TypingLayout.usedHeight(desktop) + desktop.viewGap == 768)
 
@@ -218,12 +221,12 @@ function TypingLayout.selfCheck()
 	assert(practiceDesktop.questionHeight > practicePhone.questionHeight, "a physical keyboard gives practice more room")
 
 	assert(TypingLayout.glossBand(phone.questionHeight, false) == 0, "a hidden gloss returns the prompt area")
-	local matchBand = TypingLayout.glossBand(phone.questionHeight, true)
+	local matchBand = TypingLayout.matchDetailHeight(phone.questionHeight)
 	local practiceBand = TypingLayout.glossBand(practicePhone.questionHeight, true)
-	assert(matchBand == 21 and phone.questionHeight - matchBand >= 36, "a match gloss stays inside the prompt")
+	assert(matchBand == 19 and phone.questionHeight - matchBand == 32, "a match gloss stays inside the prompt")
 	assert(practiceBand == 25 and practicePhone.questionHeight - practiceBand >= 36, "a practice gloss stays inside the prompt")
 	local refit = TypingLayout.plan(568, 320, true)
-	assert(refit.inputHeight == 28 and refit.keyBlock == 156 and refit.questionHeight == 64, "gloss does not move the input or the last key row")
+	assert(refit.inputHeight == 22 and refit.keyBlock == 156 and refit.questionHeight == 51, "gloss does not move the input or the last key row")
 end
 
 return TypingLayout

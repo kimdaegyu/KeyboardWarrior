@@ -13,6 +13,8 @@ local RankService = require(script.Parent.RankService)
 type Person = QuestionService.Person
 
 type Pending = {
+	language: string,
+	cpm: number?,
 	settlementId: string,
 	gold: number,
 	exp: number,
@@ -90,6 +92,7 @@ local function viewFor(userId: number): {[string]: any}?
 			name = person.name,
 			language = person.language,
 			score = person.score,
+			cpm = person.cpm,
 			rank = person.rank,
 		}
 	end
@@ -99,6 +102,7 @@ local function viewFor(userId: number): {[string]: any}?
 		count = #snapshot.rows,
 		rank = mine.rank,
 		score = mine.score,
+		cpm = mine.cpm,
 		language = mine.language,
 		gold = mine.gold,
 		exp = mine.exp,
@@ -175,7 +179,7 @@ local function grant(person: Person, settlementId: string, deferSave: boolean?)
 	local gold, exp = RewardRules.reward(currentRates, person.words, person.sentences, person.finished)
 	person.gold = gold
 	person.exp = exp
-	local ok, status = ProfileService.commit(person.userId, settlementId, gold, exp, person.score, person.finished)
+	local ok, status = ProfileService.commit(person.userId, settlementId, gold, exp, person.score, person.finished, person.cpm, person.language)
 	if not ok then
 		person.saveState = "unavailable"
 		saveState[person.userId] = person.saveState
@@ -184,6 +188,8 @@ local function grant(person: Person, settlementId: string, deferSave: boolean?)
 			gold = gold,
 			exp = exp,
 			score = person.score,
+			cpm = person.cpm,
+			language = person.language,
 			finished = person.finished,
 		}
 		return
@@ -209,7 +215,7 @@ local function retryWaiting(userId: number)
 	if pending == nil then
 		return
 	end
-	local ok, status = ProfileService.commit(userId, pending.settlementId, pending.gold, pending.exp, pending.score, pending.finished)
+	local ok, status = ProfileService.commit(userId, pending.settlementId, pending.gold, pending.exp, pending.score, pending.finished, pending.cpm, pending.language)
 	if not ok then
 		return
 	end
@@ -273,7 +279,7 @@ function RewardService.finalize(captured: QuestionService.Capture)
 	end
 end
 
-function RewardService.onPlayerRemoving(userId: number)
+function RewardService.settleDeparture(userId: number, deferSave: boolean?)
 	local preview = QuestionService.preview(userId)
 	if preview == nil or rates == nil then
 		ensureTables()
@@ -295,7 +301,11 @@ function RewardService.onPlayerRemoving(userId: number)
 		exp = 0,
 		saveState = "pending",
 	}
-	grant(person, preview.settlementId, true)
+	grant(person, preview.settlementId, deferSave == true)
+end
+
+function RewardService.onPlayerRemoving(userId: number)
+	RewardService.settleDeparture(userId, true)
 end
 
 function RewardService.read(settlementId: string): any?

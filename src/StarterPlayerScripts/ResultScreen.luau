@@ -1,4 +1,5 @@
 --!strict
+local SoundManager = require(script.Parent.SoundManager)
 -- Result screen for the local participant. Rank order is the server snapshot.
 
 local Players = game:GetService("Players")
@@ -8,6 +9,8 @@ local Workspace = game:GetService("Workspace")
 
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local Localization = require(ReplicatedStorage.Shared.Localization)
+local RewardRules = require(ReplicatedStorage.Shared.RewardRules)
+local TableData = require(ReplicatedStorage.Shared.TableData)
 local ResultLayout = require(ReplicatedStorage.Shared.ResultLayout)
 local ItemIconUtil = require(ReplicatedStorage.Shared.ItemIconUtil)
 local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
@@ -15,6 +18,8 @@ local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
 local ResultScreen = {}
 
 function ResultScreen.bind(root: Frame): () -> ()
+	local stateFolder = ReplicatedStorage:WaitForChild("MatchState")
+	local levels = RewardRules.levelsFromRows(TableData.rows("LevelDataSheet"))
 	local request = ReplicatedStorage:WaitForChild("ResultRequest")
 	local state = ReplicatedStorage:WaitForChild("ResultState")
 	assert(request:IsA("RemoteEvent") and state:IsA("RemoteEvent"))
@@ -36,6 +41,7 @@ function ResultScreen.bind(root: Frame): () -> ()
 	summary.ZIndex = 9
 	summary.Parent = screen
 	UiChrome.paint(summary, "panel")
+	local closeButton = UiChrome.closeButton(summary)
 
 	local function stat(name: string, color: Color3, xAlign: Enum.TextXAlignment): TextLabel
 		local label = Instance.new("TextLabel")
@@ -111,12 +117,58 @@ function ResultScreen.bind(root: Frame): () -> ()
 
 	local rowLabels: {TextLabel} = {}
 	local view: {[string]: any}? = nil
+	local lastRewardSound: string? = nil
 	local asked = false
+	local animationId: string? = nil
+	local startExp, targetExp, startedAt = 0, -1, 0
+	local lastDisplayedExp, lastSeconds = -1, -1
+	local floorExp, nextExp = 0, nil :: number?
+
+	local function updateProgress(current: {[string]: any})
+		if type(current.totalExp) ~= "number" then
+			barBack.Visible = false
+			levelLabel.Text = Localization.getText("Result.LevelUnknown")
+			return
+		end
+		if animationId ~= current.settlementId or targetExp ~= current.totalExp then
+			animationId = current.settlementId
+			targetExp = current.totalExp
+			startExp = math.max(0, targetExp - (current.exp or 0))
+			startedAt = os.clock()
+			lastDisplayedExp = -1
+		end
+		local elapsed = math.clamp((os.clock() - startedAt) / 1.1, 0, 1)
+		local animated = startExp + (targetExp - startExp) * elapsed
+		local displayed = math.floor(animated)
+		if displayed ~= lastDisplayedExp then
+			lastDisplayedExp = displayed
+			local level: number
+			level, floorExp, nextExp = RewardRules.progress(displayed, levels)
+			local progress = if nextExp then Localization.getText("Result.ExpBar", nil, {current = displayed, next = nextExp})
+				else Localization.getText("Result.ExpMax", nil, {current = displayed})
+			levelLabel.Text = Localization.getText("Result.Level", nil, {level = level}) .. "  " .. progress
+		elseif elapsed >= 1 then
+			return
+		end
+		local ratio = if nextExp then math.clamp((animated - floorExp) / (nextExp - floorExp), 0, 1) else 1
+		barFill.Size = UDim2.fromScale(ratio, 1)
+		barBack.Visible = true
+	end
+
+	local function updateCountdown()
+		local endsAt = stateFolder:GetAttribute("PhaseEndsAt")
+		if type(endsAt) ~= "number" then return end
+		local seconds = math.max(0, math.ceil(endsAt + constants.Match.RestSeconds - Workspace:GetServerTimeNow()))
+		if seconds == lastSeconds then return end
+		lastSeconds = seconds
+		nextLabel.Text = Localization.getText("Result.Next", nil, { seconds = seconds })
+	end
 
 	local function showing(): boolean
 		local folder = ReplicatedStorage:FindFirstChild("MatchState")
 		local phase = if folder ~= nil then folder:GetAttribute("Phase") else nil
 		return phase == "Result"
+			and root:GetAttribute("ResultDismissed") ~= true
 			and Players.LocalPlayer:GetAttribute("InMatch") == true
 			and root:GetAttribute("PracticeOpen") ~= true
 			and root:GetAttribute("SettingsOpen") ~= true
@@ -137,7 +189,11 @@ function ResultScreen.bind(root: Frame): () -> ()
 		row.TextYAlignment = Enum.TextYAlignment.Center
 		row.TextTruncate = Enum.TextTruncate.AtEnd
 		row.ZIndex = 11
+		UiChrome.round(row, 6)
+		local padding = Instance.new("UIPadding")
+		padding.PaddingLeft = UDim.new(0, 7)
 		row.Parent = list
+		padding.Parent = row
 		rowLabels[index] = row
 		return row
 	end
@@ -154,33 +210,16 @@ function ResultScreen.bind(root: Frame): () -> ()
 			count = tostring(current.count),
 		})
 		scoreLabel.Text = Localization.getText("Result.Score", nil, { score = tostring(current.score) })
+		if current.cpm ~= nil then
+			scoreLabel.Text ..= "   ·   " .. Localization.getText("Match.CpmValue", nil, { value = current.cpm })
+		end
 		languageLabel.Text = Localization.getText("Result.Language", nil, {
 			language = if type(current.language) == "string" then current.language else Localization.getText("Match.Language"),
 		})
 		rewardLabel.Text = Localization.getText("Result.Gold", nil, { gold = tostring(current.gold) })
 			.. "   "
 			.. Localization.getText("Result.Exp", nil, { exp = tostring(current.exp) })
-		if type(current.level) == "number" and type(current.totalExp) == "number" then
-			levelLabel.Text = Localization.getText("Result.Level", nil, { level = tostring(current.level) })
-			if type(current.nextExp) == "number" then
-				levelLabel.Text ..= "  " .. Localization.getText("Result.ExpBar", nil, {
-					current = tostring(current.totalExp),
-					next = tostring(current.nextExp),
-				})
-			else
-				levelLabel.Text ..= "  " .. Localization.getText("Result.ExpMax", nil, { current = tostring(current.totalExp) })
-			end
-			local floorExp = if type(current.floorExp) == "number" then current.floorExp else 0
-			local nextExp = if type(current.nextExp) == "number" then current.nextExp else current.totalExp
-			local span = nextExp - floorExp
-			local ratio = if span > 0 then math.clamp((current.totalExp - floorExp) / span, 0, 1) else 1
-			barFill.Size = UDim2.fromScale(ratio, 1)
-			barBack.Visible = true
-		else
-			levelLabel.Text = Localization.getText("Result.LevelUnknown")
-			barFill.Size = UDim2.fromScale(0, 1)
-			barBack.Visible = false
-		end
+		updateProgress(current)
 		local saveKey = "Result.Saving"
 		local saveColor = Color3.fromRGB(73, 86, 108)
 		if current.saveState == "saved" then
@@ -195,7 +234,7 @@ function ResultScreen.bind(root: Frame): () -> ()
 		end
 		saveLabel.Text = Localization.getText(saveKey)
 		saveLabel.TextColor3 = saveColor
-		nextLabel.Text = Localization.getText("Result.Next")
+		updateCountdown()
 
 		local rows = if type(current.rows) == "table" then current.rows else {}
 		for index = 1, math.max(#rows, #rowLabels) do
@@ -208,6 +247,9 @@ function ResultScreen.bind(root: Frame): () -> ()
 					local name = if type(row.name) == "string" then row.name else tostring(row.userId)
 					local language = if type(row.language) == "string" then row.language else "EN"
 					label.Text = `{row.rank}  {name}  {language}  {row.score}`
+					if row.cpm ~= nil then
+						label.Text ..= "   " .. Localization.getText("Match.CpmValue", nil, { value = row.cpm })
+					end
 					label.BackgroundColor3 = if mine then UiChrome.Blue else UiChrome.White
 					label.BackgroundTransparency = if mine then 0 else 1
 					label.TextColor3 = if mine then UiChrome.White else UiChrome.Navy
@@ -250,9 +292,12 @@ function ResultScreen.bind(root: Frame): () -> ()
 		levelLabel.TextSize = textSize
 		saveLabel.TextSize = textSize - 1
 		nextLabel.TextSize = textSize - 1
+		local side = if plan.compact then 32 else 40
+		closeButton.Position = UDim2.new(1, -4, 0, 3)
+		closeButton.Size = UDim2.fromOffset(side, side)
 		local y = 8
-		placeLabel.Position = UDim2.fromOffset(12, y)
-		placeLabel.Size = UDim2.new(1, -24, 0, placeSize + 4)
+		placeLabel.Position = UDim2.fromOffset(side + 6, y)
+		placeLabel.Size = UDim2.new(1, -2 * (side + 6), 0, placeSize + 4)
 		y += placeSize + 4
 		scoreLabel.Position = UDim2.fromOffset(12, y)
 		scoreLabel.Size = UDim2.new(0.58, -12, 0, textSize + 6)
@@ -279,6 +324,9 @@ function ResultScreen.bind(root: Frame): () -> ()
 	end
 
 	local function sync()
+		if stateFolder:GetAttribute("Phase") ~= "Result" then
+			root:SetAttribute("ResultDismissed", nil)
+		end
 		local show = showing()
 		if not show then
 			asked = false
@@ -297,15 +345,23 @@ function ResultScreen.bind(root: Frame): () -> ()
 		if type(message) ~= "table" or type(message.settlementId) ~= "string" or type(message.rows) ~= "table" then
 			return
 		end
-		if not showing() then
+		if not showing() or message.matchId ~= stateFolder:GetAttribute("MatchId") then
 			return
+		end
+		if lastRewardSound ~= message.settlementId then
+			lastRewardSound = message.settlementId
+			SoundManager.play("Reward")
 		end
 		view = message
 		render()
 	end
 
+	closeButton.Activated:Connect(function()
+		SoundManager.play("UIClose")
+		root:SetAttribute("ResultDismissed", true)
+		sync()
+	end)
 	applyLayout()
-	local stateFolder = ReplicatedStorage:WaitForChild("MatchState")
 	local connections = {
 		root:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyLayout),
 		root:GetAttributeChangedSignal("ContentWidth"):Connect(applyLayout),
@@ -318,12 +374,14 @@ function ResultScreen.bind(root: Frame): () -> ()
 		root:GetAttributeChangedSignal("ShopOpen"):Connect(sync),
 		state.OnClientEvent:Connect(onResult),
 		RunService.Heartbeat:Connect(function()
-			if screen.Visible then
-				render()
+			if screen.Visible and view then
+				updateProgress(view)
+				updateCountdown()
 			end
 		end),
 	}
 	local stopLocale = Localization.onChanged(function()
+		lastDisplayedExp, lastSeconds = -1, -1
 		render()
 	end)
 	sync()

@@ -12,12 +12,14 @@ local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local QuestionRules = require(ReplicatedStorage.Shared.QuestionRules)
 local PlaytestMetrics = require(ReplicatedStorage.Shared.PlaytestMetrics)
 local RewardRules = require(ReplicatedStorage.Shared.RewardRules)
+local FloorService = require(script.Parent.FloorService)
 local SettingsRules = require(ReplicatedStorage.Shared.SettingsRules)
 local TableData = require(ReplicatedStorage.Shared.TableData)
 local ProfileService = require(script.Parent.ProfileService)
 local SettingsService = require(script.Parent.SettingsService)
 
 export type Person = {
+	cpm: number?,
 	userId: number,
 	name: string,
 	language: string,
@@ -63,6 +65,7 @@ local started = false
 local deck: {QuestionRules.Prompt} = {}
 local round: QuestionRules.Round? = nil
 local names: {[number]: string} = {}
+local shownScore: {[number]: number} = {}
 local feedbackEvent: RemoteEvent? = nil
 local scoreEvent: RemoteEvent? = nil
 
@@ -195,7 +198,10 @@ function QuestionService.start()
 		end
 		local message = QuestionRules.submit(round, player.UserId, matchId, issue, text, Workspace:GetServerTimeNow(), method)
 		feedback:FireClient(player, message)
-		if message.awarded == true then
+		if message.awarded == true and type(message.total) == "number" then
+			local previous = shownScore[player.UserId] or 0
+			shownScore[player.UserId] = message.total
+			FloorService.noteScore(player, previous, message.total, message.matchId)
 			broadcastScores()
 		end
 	end)
@@ -231,6 +237,11 @@ local function capture(current: QuestionRules.Round): Capture
 	local rows: {Person} = table.create(#outcome.rows)
 	for index, person in outcome.rows do
 		rows[index] = makePerson(person.userId, person.language, person.rank, person.score, person.words, person.sentences, person.finished)
+		local solver = current.solvers[person.userId]
+		local duration = current.endsAt - current.startedAt
+		if solver and duration > 0 then
+			rows[index].cpm = math.round(solver.strokes * 60 / duration)
+		end
 	end
 	local departed: {Person} = table.create(#outcome.departed)
 	for index, person in outcome.departed do
@@ -272,6 +283,7 @@ function QuestionService.openMatch(matchId: number, userIds: {number}, endsAt: n
 	end
 	round = QuestionRules.begin(deck, matchId, endsAt, userIds, now, SCORE, settlementId, byUser)
 	table.clear(names)
+	table.clear(shownScore)
 	for _, userId in ipairs(userIds) do
 		names[userId] = playerName(userId)
 	end
@@ -336,6 +348,7 @@ function QuestionService.preview(userId: number): Preview?
 end
 
 function QuestionService.forget(userId: number)
+	shownScore[userId] = nil
 	QuestionRules.forget(round, userId, Workspace:GetServerTimeNow())
 	if round ~= nil and not round.sealed then
 		broadcastScores()

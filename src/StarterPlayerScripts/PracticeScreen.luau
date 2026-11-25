@@ -1,10 +1,11 @@
 --!strict
+local SoundManager = require(script.Parent.SoundManager)
 -- Personal practice. The deck and the solved count stay on this client.
 -- Typing here does not submit a match answer, update a rank, or save a profile.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
+local Layout = require(script.Parent.Layout)
 
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local Localization = require(ReplicatedStorage.Shared.Localization)
@@ -22,17 +23,6 @@ local questionRows = TableData.rows("QuestionDataSheet")
 local deckLanguage = "en"
 local words, sentences = PracticeRules.catalog(questionRows, deckLanguage)
 
-local function showTouchKeys(root: Frame): boolean
-	local size = root.AbsoluteSize
-	local compact = size.Y <= constants.UI.CompactHeight or size.X <= constants.UI.CompactWidth
-	if compact then
-		return true
-	end
-	if UserInputService:GetLastInputType() == Enum.UserInputType.Keyboard then
-		return false
-	end
-	return UserInputService.TouchEnabled
-end
 
 function PracticeScreen.bind(root: Frame): () -> ()
 	local screen = Instance.new("Frame")
@@ -69,7 +59,16 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		return item
 	end
 
-	local exitButton = button("Exit", "panel")
+	local exitButton = Instance.new("TextButton")
+	exitButton.Name = "Exit"
+	exitButton.Text = ""
+	exitButton.AutoButtonColor = false
+	exitButton.ZIndex = 6
+	exitButton.Parent = toolbar
+	UiChrome.paint(exitButton, "panel")
+	local exitIcon = UiChrome.icon(exitButton, 10078)
+	exitIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	exitIcon.Position = UDim2.fromScale(0.5, 0.5)
 	local wordButton = button("Words", "panel")
 	local sentenceButton = button("Sentences", "panel")
 	local solvedLabel = Instance.new("TextLabel")
@@ -125,6 +124,7 @@ function PracticeScreen.bind(root: Frame): () -> ()
 	inputLabel.TextYAlignment = Enum.TextYAlignment.Center
 	inputLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	inputLabel.ZIndex = 6
+	UiChrome.round(inputLabel)
 	inputLabel.Parent = screen
 
 	local session: PracticeRules.Session? = nil
@@ -170,7 +170,6 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		end
 		local solved = if current ~= nil then current.solved else 0
 		solvedLabel.Text = Localization.getText("Practice.Solved", nil, { count = solved })
-		exitButton.Text = Localization.getText("Practice.Exit")
 		wordButton.Text = Localization.getText("Practice.Words")
 		sentenceButton.Text = Localization.getText("Practice.Sentences")
 		local mode = if current ~= nil then current.mode else "Word"
@@ -184,7 +183,6 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		end
 		paintMode(wordButton)
 		paintMode(sentenceButton)
-		paintMode(exitButton)
 		if lastQuestionHeight > 0 then
 			layoutGloss(lastQuestionHeight, lastTextSize)
 		end
@@ -212,6 +210,7 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		local before = current.solved
 		PracticeRules.applyText(current, words, sentences, text, not QuestionRules.autoSubmits(deckLanguage))
 		if current.solved > before then
+			SoundManager.play("UIConfirm")
 			echo = text
 			pad:settleField(text)
 			pad:composeSettled()
@@ -225,7 +224,9 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		if current == nil or current.buffer == "" then
 			return
 		end
+		local before = current.solved
 		PracticeRules.enter(current, words, sentences)
+		SoundManager.play(if current.solved > before then "UIConfirm" else "UIError")
 		pad:setText(current.buffer)
 		render()
 	end
@@ -238,17 +239,15 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		if size.X < 50 or size.Y < 50 then
 			return
 		end
-		local content = root:GetAttribute("ContentWidth")
-		local viewport = size.X
-		if type(content) == "number" then
-			viewport = math.min(viewport, content)
-		end
+		local metrics = Layout.metrics(size)
+		local viewport = metrics.contentWidth
 		local plan = TypingLayout.practicePlan(
 			viewport,
 			size.Y,
-			showTouchKeys(root),
+			root:GetAttribute("TouchControls") == true,
 			constants.UI.CompactHeight,
-			constants.UI.CompactWidth
+			constants.UI.CompactWidth,
+			metrics.margin
 		)
 		local origin = math.floor((size.X - viewport) / 2)
 		local x = origin + plan.margin
@@ -256,12 +255,14 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		local textSize = math.clamp(plan.toolbarHeight - 14, 12, 18)
 		toolbar.Position = UDim2.fromOffset(x, plan.margin)
 		toolbar.Size = UDim2.fromOffset(width, plan.toolbarHeight)
-		local exitWidth = math.clamp(math.floor(width * 0.22), 72, 140)
-		local modeWidth = math.clamp(math.floor(width * 0.24), 84, 180)
-		local cursor = 0
-		exitButton.Position = UDim2.fromOffset(cursor, 0)
-		exitButton.Size = UDim2.fromOffset(exitWidth, plan.toolbarHeight)
-		cursor += exitWidth + plan.gap
+		local side = plan.toolbarHeight
+		exitButton.Position = UDim2.fromOffset(0, 0)
+		exitButton.Size = UDim2.fromOffset(side, side)
+		local iconSide = math.max(1, math.floor(side * 0.62))
+		exitIcon.Size = UDim2.fromOffset(iconSide, iconSide)
+		local cursor = side + plan.gap
+		local remain = math.max(0, width - cursor)
+		local modeWidth = math.min(180, math.floor(remain * 0.34))
 		wordButton.Position = UDim2.fromOffset(cursor, 0)
 		wordButton.Size = UDim2.fromOffset(modeWidth, plan.toolbarHeight)
 		cursor += modeWidth + plan.gap
@@ -270,7 +271,7 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		cursor += modeWidth + plan.gap
 		solvedLabel.Position = UDim2.fromOffset(cursor, 0)
 		solvedLabel.Size = UDim2.fromOffset(math.max(0, width - cursor), plan.toolbarHeight)
-		for _, item in { exitButton, wordButton, sentenceButton, solvedLabel } do
+		for _, item in { wordButton, sentenceButton, solvedLabel } do
 			item.TextSize = textSize
 		end
 		local questionY = plan.margin + plan.toolbarHeight + plan.gap
@@ -308,7 +309,7 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		local phase = if type(phaseName) == "string" then phaseName else ""
 		local inMatch = Players.LocalPlayer:GetAttribute("InMatch") == true
 		local open = root:GetAttribute("PracticeOpen") == true
-		if open and PracticeRules.blockedByMatch(inMatch, phase) then
+		if open and PracticeRules.blockedByMatch(inMatch, phase, root:GetAttribute("ResultDismissed") == true) then
 			closeSession()
 			root:SetAttribute("PracticeOpen", false)
 			return
@@ -375,7 +376,7 @@ function PracticeScreen.bind(root: Frame): () -> ()
 				render()
 			end
 		end),
-		UserInputService.LastInputTypeChanged:Connect(applyLayout),
+		root:GetAttributeChangedSignal("TouchControls"):Connect(applyLayout),
 		Players.LocalPlayer:GetAttributeChangedSignal("InMatch"):Connect(sync),
 		stateFolder:GetAttributeChangedSignal("Phase"):Connect(sync),
 	}

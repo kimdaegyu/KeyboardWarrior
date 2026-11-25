@@ -6,6 +6,8 @@ export type Profile = {
 	gold: number,
 	exp: number,
 	bestScore: number,
+	bestScoreCpm: number?,
+	bestScoreLanguage: string?,
 	grants: {string}?,
 	uiLocale: string?,
 	gloss: string?,
@@ -16,6 +18,8 @@ export type Profile = {
 	body: string?,
 	rim: string?,
 	effect: string?,
+	bgmVolume: number?,
+	sfxVolume: number?,
 }
 
 export type Row = {
@@ -116,6 +120,8 @@ function TutorialRules.acknowledge(profile: Profile): Profile
 		gold = profile.gold,
 		exp = profile.exp,
 		bestScore = profile.bestScore,
+		bestScoreCpm = profile.bestScoreCpm,
+		bestScoreLanguage = profile.bestScoreLanguage,
 		grants = grants,
 		tutorialSeen = true,
 	}
@@ -127,6 +133,12 @@ function TutorialRules.acknowledge(profile: Profile): Profile
 	end
 	if type(profile.typing) == "string" then
 		updated.typing = profile.typing
+	end
+	if type(profile.bgmVolume) == "number" then
+		updated.bgmVolume = profile.bgmVolume
+	end
+	if type(profile.sfxVolume) == "number" then
+		updated.sfxVolume = profile.sfxVolume
 	end
 	if profile.ranked == true then
 		updated.ranked = true

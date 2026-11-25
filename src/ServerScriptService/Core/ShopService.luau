@@ -4,6 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local RewardRules = require(ReplicatedStorage.Shared.RewardRules)
 local ShopRules = require(ReplicatedStorage.Shared.ShopRules)
 local TableData = require(ReplicatedStorage.Shared.TableData)
 local ProfileService = require(script.Parent.ProfileService)
@@ -12,6 +13,7 @@ local ShopService = {}
 
 local started = false
 local catalog: {ShopRules.Item}? = nil
+local levels: {RewardRules.LevelStep}? = nil
 local stateEvent: RemoteEvent? = nil
 
 local function remote(name: string): RemoteEvent
@@ -74,7 +76,10 @@ local function payload(userId: number, reason: string)
 			})
 		end
 	end
+	local steps = levels or RewardRules.levelsFromRows(TableData.rows("LevelDataSheet"))
+	levels = steps
 	return {
+		level = if profile and steps and #steps > 0 then RewardRules.progress(profile.exp, steps) else nil,
 		status = if profile == nil then "unavailable" else "ready",
 		reason = reason,
 		gold = if profile ~= nil then profile.gold else 0,

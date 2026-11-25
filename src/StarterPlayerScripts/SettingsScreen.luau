@@ -12,11 +12,19 @@ local SettingsLayout = require(ReplicatedStorage.Shared.SettingsLayout)
 local SettingsRules = require(ReplicatedStorage.Shared.SettingsRules)
 local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
 local SettingsState = require(script.Parent.SettingsState)
+local SoundManager = require(script.Parent.SoundManager)
+
 
 local SettingsScreen = {}
 
 local function copyChoice(choice: SettingsState.Choice): SettingsState.Choice
-	return { uiLocale = choice.uiLocale, gloss = choice.gloss, typing = choice.typing }
+	return {
+		uiLocale = choice.uiLocale,
+		gloss = choice.gloss,
+		typing = choice.typing,
+		bgmVolume = choice.bgmVolume,
+		sfxVolume = choice.sfxVolume,
+	}
 end
 
 function SettingsScreen.bind(root: Frame): () -> ()
@@ -34,6 +42,17 @@ function SettingsScreen.bind(root: Frame): () -> ()
 	screen.ZIndex = 3
 	screen.Parent = root
 
+	local function surface(name: string): Frame
+		local frame = Instance.new("Frame")
+		frame.Name = name
+		frame.ZIndex = 4
+		frame.Parent = screen
+		UiChrome.paint(frame, "panel")
+		local outline = frame:FindFirstChildOfClass("UIStroke")
+		if outline then outline.Color = UiChrome.Navy end
+		return frame
+	end
+	local card = surface("SettingsCard")
 	local panel = Instance.new("ScrollingFrame")
 	panel.ScrollBarThickness = 4
 	panel.ScrollingDirection = Enum.ScrollingDirection.Y
@@ -42,8 +61,9 @@ function SettingsScreen.bind(root: Frame): () -> ()
 	panel.BackgroundColor3 = UiChrome.White
 	panel.BorderSizePixel = 0
 	panel.ZIndex = 4
-	panel.Parent = screen
-	UiChrome.paint(panel, "panel")
+	panel.Parent = card
+	panel.Size = UDim2.fromScale(1, 1)
+	panel.BackgroundTransparency = 1
 
 	local function label(name: string, color: Color3, parent: Instance): TextLabel
 		local text = Instance.new("TextLabel")
@@ -98,12 +118,12 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		return button
 	end
 
-	local titleLabel = label("Title", UiChrome.Navy, panel)
+	local titleLabel = label("Title", UiChrome.Navy, card)
 	local uiLabel = label("UiLanguage", UiChrome.Navy, panel)
 	local typingLabel = label("TypingLanguage", UiChrome.Navy, panel)
 	local glossLabel = label("GlossLanguage", UiChrome.Navy, panel)
 	local statusLabel = label("Status", UiChrome.Navy, panel)
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Font = Enum.Font.GothamBold
 	local uiButton, uiCaption, uiArrow = valueButton("UiValue")
 	local typingButton, typingCaption, typingNote = valueButton("TypingValue")
@@ -111,9 +131,99 @@ function SettingsScreen.bind(root: Frame): () -> ()
 	typingNote.TextYAlignment = Enum.TextYAlignment.Top
 	local glossButton, glossCaption, glossArrow = valueButton("GlossValue")
 	local applyButton = actionButton("Apply")
-	local closeButton = actionButton("Close")
+	local closeButton = UiChrome.closeButton(card)
 	local replayButton = actionButton("Replay")
 	applyButton:SetAttribute("Face", "primary")
+
+	local tutorialLabel = label("Tutorial", UiChrome.Navy, panel)
+	local gear = UiChrome.icon(card, 10063)
+	local function volumeControl(name: string, bus: string)
+		local title = label(name, UiChrome.Navy, panel)
+		title.Font = Enum.Font.GothamBold
+		local host = Instance.new("Frame")
+		host.Name = name .. "Value"
+		host.BackgroundTransparency = 1
+		host.BorderSizePixel = 0
+		host.ZIndex = 6
+		host.Parent = panel
+		local percent = label("Percent", UiChrome.Navy, host)
+		percent.TextXAlignment = Enum.TextXAlignment.Right
+		percent.ZIndex = 8
+		local hit = Instance.new("TextButton")
+		hit.Name = "Hit"
+		hit.Text = ""
+		hit.AutoButtonColor = false
+		hit.BackgroundTransparency = 1
+		hit.ZIndex = 7
+		hit.Parent = host
+		local track = Instance.new("Frame")
+		track.Name = "Track"
+		track.BackgroundColor3 = Color3.fromRGB(216, 227, 250)
+		track.BorderSizePixel = 0
+		track.Active = false
+		track.ZIndex = 7
+		track.Parent = hit
+		local trackCorner = Instance.new("UICorner")
+		trackCorner.CornerRadius = UDim.new(1, 0)
+		trackCorner.Parent = track
+		local fill = Instance.new("Frame")
+		fill.Name = "Fill"
+		fill.BackgroundColor3 = UiChrome.Blue
+		fill.BorderSizePixel = 0
+		fill.Active = false
+		fill.ZIndex = 8
+		fill.Parent = track
+		local fillCorner = Instance.new("UICorner")
+		fillCorner.CornerRadius = UDim.new(1, 0)
+		fillCorner.Parent = fill
+		local knob = Instance.new("Frame")
+		knob.Name = "Knob"
+		knob.AnchorPoint = Vector2.new(0.5, 0.5)
+		knob.BackgroundColor3 = UiChrome.Blue
+		knob.BorderSizePixel = 0
+		knob.Active = false
+		knob.ZIndex = 9
+		knob.Parent = track
+		local knobCorner = Instance.new("UICorner")
+		knobCorner.CornerRadius = UDim.new(1, 0)
+		knobCorner.Parent = knob
+		local icon = Instance.new("ImageLabel")
+		icon.Name = "Icon"
+		icon.BackgroundTransparency = 1
+		icon.ZIndex = 6
+		icon.Parent = panel
+		return {
+			title = title,
+			button = host,
+			icon = icon,
+			bus = bus,
+			track = track,
+			fill = fill,
+			knob = knob,
+			percent = percent,
+			hit = hit,
+		}
+	end
+	local bgmRow = volumeControl("Music", "bgm")
+	local sfxRow = volumeControl("Effects", "sfx")
+	local rows = {
+		{ title = uiLabel, button = uiButton, icon = UiChrome.icon(panel, "Language") },
+		{ title = glossLabel, button = glossButton, icon = UiChrome.icon(panel, "Language") },
+		{ title = typingLabel, button = typingButton, icon = UiChrome.icon(panel, "Practice") },
+		bgmRow,
+		sfxRow,
+		{ title = tutorialLabel, button = replayButton, icon = UiChrome.icon(panel, "Tutorial") },
+	}
+	local rules: {Frame} = {}
+	for index, row in rows do
+		row.title.Font = Enum.Font.GothamBold
+		local rule = Instance.new("Frame")
+		rule.Name = "Separator"
+		rule.BackgroundColor3 = Color3.fromRGB(216, 227, 250)
+		rule.BorderSizePixel = 0
+		rule.Parent = panel
+		rules[index] = rule
+	end
 
 	local picker = Instance.new("Frame")
 	picker.Name = "LanguageList"
@@ -148,7 +258,7 @@ function SettingsScreen.bind(root: Frame): () -> ()
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.Padding = UDim.new(0, 4)
 	listLayout.Parent = scroller
-	local backButton = actionButton("Back", Color3.fromRGB(72, 48, 110))
+	local backButton = actionButton("Back")
 	backButton.Parent = pickerPanel
 	backButton.ZIndex = 10
 
@@ -158,9 +268,72 @@ function SettingsScreen.bind(root: Frame): () -> ()
 	local shown = false
 	local pickerKind: string? = nil
 	local pickerButtons: {TextButton} = {}
+	local drag: { bus: string, touch: InputObject?, origin: number }? = nil
+
+	local function volumeOf(bus: string): number
+		return if bus == "bgm" then draft.bgmVolume else draft.sfxVolume
+	end
+
+	local function assignVolume(bus: string, percent: number)
+		if bus == "bgm" then
+			if draft.bgmVolume ~= percent then
+				draft.bgmVolume = percent
+				dirty = true
+			end
+		elseif draft.sfxVolume ~= percent then
+			draft.sfxVolume = percent
+			dirty = true
+		end
+		SoundManager.setVolumes(draft.bgmVolume, draft.sfxVolume)
+	end
+
+	local function snap(alpha: number): number
+		return math.clamp(math.round(math.clamp(alpha, 0, 1) * 20) * 5, 0, 100)
+	end
+
+	local function alphaFrom(hit: TextButton, x: number): number
+		local width = hit.AbsoluteSize.X
+		if width <= 0 then
+			return 0
+		end
+		return (x - hit.AbsolutePosition.X) / width
+	end
+
+	local function paintVolume(row, trackWidth: number?, knobSize: number?)
+		local percent = volumeOf(row.bus)
+		row.percent.Text = string.format("%d%%", percent)
+		row.fill.Size = UDim2.new(percent / 100, 0, 1, 0)
+		local width = if trackWidth ~= nil then trackWidth else row.track.AbsoluteSize.X
+		local knob = if knobSize ~= nil then knobSize else row.knob.AbsoluteSize.X
+		local height = if trackWidth ~= nil then row.track.Size.Y.Offset else row.track.AbsoluteSize.Y
+		if width > 0 and knob > 0 then
+			local travel = math.max(0, width - knob)
+			row.knob.Position = UDim2.fromOffset(knob / 2 + travel * percent / 100, height / 2)
+		end
+	end
+
+	local function rowFor(bus: string)
+		return if bus == "bgm" then bgmRow else sfxRow
+	end
+
+	local function beginDrag(row, input: InputObject)
+		if drag ~= nil then
+			return
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		drag = {
+			bus = row.bus,
+			touch = if input.UserInputType == Enum.UserInputType.Touch then input else nil,
+			origin = volumeOf(row.bus),
+		}
+		assignVolume(row.bus, snap(alphaFrom(row.hit, input.Position.X)))
+		paintVolume(row)
+	end
 
 	local function same(left: SettingsState.Choice, right: SettingsState.Choice): boolean
-		return left.uiLocale == right.uiLocale and left.gloss == right.gloss
+		return left.uiLocale == right.uiLocale and left.gloss == right.gloss and left.bgmVolume == right.bgmVolume and left.sfxVolume == right.sfxVolume
 	end
 
 	local function choicesFor(kind: string): {SettingsRules.Choice}
@@ -218,7 +391,7 @@ function SettingsScreen.bind(root: Frame): () -> ()
 
 	local function closeList()
 		pickerKind = nil
-		panel.Visible = true
+		card.Visible = true
 		picker.Visible = false
 		clearList()
 	end
@@ -243,10 +416,11 @@ function SettingsScreen.bind(root: Frame): () -> ()
 			return
 		end
 		local choices = choicesFor(kind)
-		local plan = SettingsLayout.listPlan(width, sizeY - 16, #choices, constants.UI.CompactHeight, constants.UI.CompactWidth)
+		local top = 4
+		local plan = SettingsLayout.listPlan(width, sizeY - top - 16, #choices, constants.UI.CompactHeight, constants.UI.CompactWidth)
 		local origin = math.floor((sizeX - width) / 2)
 		local x = origin + math.floor((width - plan.panelWidth) / 2)
-		pickerPanel.Position = UDim2.fromOffset(x, plan.margin)
+		pickerPanel.Position = UDim2.fromOffset(x, top + plan.margin)
 		pickerPanel.Size = UDim2.fromOffset(plan.panelWidth, plan.listHeight + plan.gap + plan.back + 16)
 
 		scroller.Position = UDim2.fromOffset(8, 8)
@@ -343,7 +517,7 @@ function SettingsScreen.bind(root: Frame): () -> ()
 			end)
 			table.insert(pickerButtons, button)
 		end
-		panel.Visible = false
+		card.Visible = false
 		picker.Visible = true
 		scroller.CanvasPosition = Vector2.zero
 		refreshList()
@@ -357,25 +531,31 @@ function SettingsScreen.bind(root: Frame): () -> ()
 			typingId = typingChoices[1].id
 		end
 		titleLabel.Text = Localization.getText("Settings.Title")
-		uiLabel.Text = Localization.getText("Settings.UiLanguage")
-		typingLabel.Text = Localization.getText("Settings.TypingLanguage")
-		glossLabel.Text = Localization.getText("Settings.Gloss")
+		uiLabel.Text = Localization.getText("Settings.GameLanguage")
+		typingLabel.Text = Localization.getText(if UserInputService.TouchEnabled then "Settings.MobileInput" else "Settings.TypingLanguage")
+		glossLabel.Text = Localization.getText("Settings.TranslationLanguage")
 		uiCaption.Text = currentName("ui")
 		uiArrow.Text = if #choicesFor("ui") > 1 then "›" else ""
-		typingCaption.Text = currentName("typing")
-		local typingSelectable = not UserInputService.TouchEnabled and #typingChoices > 1
-		local typingNoteKey = if UserInputService.TouchEnabled then "Settings.TypingMobile" else "Settings.TypingNote"
-		typingNote.Text = if typingSelectable then "›" else Localization.getText(typingNoteKey)
-		typingNote.TextXAlignment = if typingSelectable then Enum.TextXAlignment.Right else Enum.TextXAlignment.Left
-		typingNote.Visible = true
+		local mobile = UserInputService.TouchEnabled
+		local typingSelectable = not mobile and #typingChoices > 1
+		typingCaption.Text = if mobile then "English (QWERTY)" else currentName("typing")
+		typingNote.Text = "▾"
+		typingNote.Visible = typingSelectable
+		typingNote.TextXAlignment = Enum.TextXAlignment.Center
+		typingNote.TextYAlignment = Enum.TextYAlignment.Center
 		typingButton.Active = typingSelectable
 		glossCaption.Text = currentName("gloss")
 		glossArrow.Text = if #choicesFor("gloss") > 1 then "›" else ""
 		uiButton.Active = #choicesFor("ui") > 1
 		glossButton.Active = #choicesFor("gloss") > 1
 		applyButton.Text = Localization.getText("Settings.Apply")
-		closeButton.Text = Localization.getText("Settings.Close")
-		replayButton.Text = Localization.getText("Tutorial.Replay")
+
+		bgmRow.title.Text = Localization.getText("Settings.MusicVolume")
+		sfxRow.title.Text = Localization.getText("Settings.SoundEffectsVolume")
+		paintVolume(bgmRow)
+		paintVolume(sfxRow)
+		tutorialLabel.Text = Localization.getText("Settings.TutorialLabel")
+		replayButton.Text = Localization.getText("Settings.Replay")
 		local statusKey: string? = nil
 		if state == "saving" then
 			statusKey = "Settings.Saving"
@@ -397,79 +577,86 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		if not screen.Visible then
 			return
 		end
-		local sizeX, sizeY, width = viewport()
+		local sizeX, sizeY = viewport()
 		if sizeX < 50 or sizeY < 50 then
 			return
 		end
-		local plan = SettingsLayout.plan(width, math.max(1, sizeY - 16), constants.UI.CompactHeight, constants.UI.CompactWidth)
-		local origin = math.floor((sizeX - width) / 2)
-		local x = origin + math.floor((width - plan.panelWidth) / 2)
-		local body = SettingsLayout.usedHeight(plan) - plan.margin * 2 + 16
-		local height = math.min(body, sizeY - 12)
-		panel.Position = UDim2.fromOffset(x, math.floor((sizeY - height) / 2))
-		panel.Size = UDim2.fromOffset(plan.panelWidth, height)
-		panel.CanvasSize = UDim2.fromOffset(0, body)
+		local plan = SettingsLayout.plan(sizeX, sizeY, constants.UI.CompactHeight, constants.UI.CompactWidth)
+		local pad = plan.margin
+		local function box(obj: GuiObject, x: number, y: number, w: number, h: number)
+			obj.Position = UDim2.fromOffset(x, y)
+			obj.Size = UDim2.fromOffset(w, h)
+		end
 
-		local inner = 14
-		local rowWidth = math.max(0, plan.panelWidth - inner * 2)
-		local cursorY = 8
-		local function placeLabel(item: TextLabel, height: number)
-			item.Position = UDim2.fromOffset(inner, cursorY)
-			item.Size = UDim2.fromOffset(rowWidth, height)
-			item.TextSize = math.clamp(height - 4, 12, 22)
-			cursorY += height + plan.gap
-		end
-		local function placeRow(button: TextButton, caption: TextLabel, extra: TextLabel, height: number, note: boolean)
-			button.Position = UDim2.fromOffset(inner, cursorY)
-			button.Size = UDim2.fromOffset(rowWidth, height)
-			UiChrome.paint(button, "panel")
-			if note then
-				caption.Position = UDim2.fromOffset(8, 1)
-				caption.Size = UDim2.new(1, -16, 0, math.floor(height * 0.5))
-				caption.TextSize = math.clamp(math.floor(height * 0.42), 12, 18)
-				extra.Position = UDim2.fromOffset(8, math.floor(height * 0.48))
-				extra.Size = UDim2.new(1, -16, 0, math.floor(height * 0.48))
-				extra.TextSize = math.clamp(math.floor(height * 0.34), 10, 14)
+		local body = SettingsLayout.usedHeight(plan, #rows)
+		local top = 6
+		local height = math.min(body, sizeY - top - 6)
+		local w = plan.panelWidth
+		card.Position = UDim2.fromOffset(math.floor((sizeX - w) / 2), math.max(top, math.floor((sizeY - height) / 2)))
+		card.Size = UDim2.fromOffset(w, height)
+		local headerHeight = pad + plan.title
+		panel.Position = UDim2.fromOffset(0, headerHeight)
+		panel.Size = UDim2.new(1, 0, 1, -headerHeight)
+		panel.CanvasSize = UDim2.fromOffset(0, body - headerHeight)
+		local mark = math.clamp(math.round(plan.row * 0.68), 18, 36)
+		local right = w - pad
+		local textX = pad + mark + 8
+		local font = math.clamp(math.round(plan.row * 0.47), 14, 25)
+		box(gear, pad, pad + (plan.title - mark) / 2, mark, mark)
+		box(titleLabel, textX, pad, right - textX - plan.row, plan.title)
+		titleLabel.TextSize = math.clamp(math.round(plan.title * 0.72), 19, 40)
+		for index, row in rows do
+			local y = (index - 1) * plan.stride
+			local volume = row.bus ~= nil
+			local bw = if volume then math.floor((w - 2 * pad) * 0.58) else math.min(math.floor((w - 2 * pad) * 0.48), if index == 3 then plan.row * 4.9 else math.max(118, plan.row * 3.4))
+			local bx = right - bw
+			box(row.icon, pad, y + (plan.stride - mark) / 2, mark, mark)
+			box(row.title, textX, y, bx - textX - 6, plan.stride)
+			row.title.TextSize = font
+			box(row.button, bx, y + (plan.stride - plan.row) / 2, bw, plan.row)
+			if volume then
+				local percentWidth = math.max(58, math.round(font * 3.4))
+				row.percent.Position = UDim2.new(1, -percentWidth, 0, 0)
+				row.percent.Size = UDim2.fromOffset(percentWidth, plan.row)
+				row.percent.TextSize = font
+				local trackWidth = math.max(0, bw - percentWidth - 8)
+				row.hit.Position = UDim2.fromOffset(0, 0)
+				row.hit.Size = UDim2.fromOffset(trackWidth, plan.row)
+				local trackHeight = math.max(8, math.floor(plan.row * 0.28))
+				row.track.Position = UDim2.fromOffset(0, math.floor((plan.row - trackHeight) / 2))
+				row.track.Size = UDim2.fromOffset(trackWidth, trackHeight)
+				local knobSize = math.max(trackHeight + 6, math.floor(plan.row * 0.46))
+				row.knob.Size = UDim2.fromOffset(knobSize, knobSize)
+				paintVolume(row, trackWidth, knobSize)
 			else
-				caption.Position = UDim2.fromOffset(8, 0)
-				caption.Size = UDim2.new(1, -36, 1, 0)
-				caption.TextSize = math.clamp(height - 14, 12, 18)
-				extra.Position = UDim2.new(1, -28, 0, 0)
-				extra.Size = UDim2.fromOffset(20, height)
-				extra.TextSize = math.clamp(height - 12, 14, 22)
+				UiChrome.paint(row.button, "panel")
+				row.button.TextSize = font
 			end
-			cursorY += height + plan.gap
+			box(rules[index], pad, y + plan.stride - 1, right - pad, 1)
 		end
-		local function placeActions(buttons: {TextButton}, height: number)
-			local gap = plan.gap
-			local buttonWidth = math.floor((rowWidth - gap) / 2)
-			local cursor = inner
-			for _, button in buttons do
-				button.Position = UDim2.fromOffset(cursor, cursorY)
-				button.Size = UDim2.fromOffset(buttonWidth, height)
-				button.TextSize = math.clamp(height - 14, 12, 18)
-				local face = button:GetAttribute("Face")
-				local role = if type(face) == "string" then face else "panel"
-				UiChrome.paint(button, role)
-				button.TextColor3 = UiChrome.ink(role)
-				cursor += buttonWidth + gap
-			end
+		local function captionLayout(caption: TextLabel, arrow: TextLabel, enabled: boolean)
+			local inset = if enabled then 26 else 8
+			caption.Position = UDim2.fromOffset(6, 0)
+			caption.Size = UDim2.new(1, -6 - inset, 1, 0)
+			caption.TextXAlignment = Enum.TextXAlignment.Center
+			caption.TextSize = font
+			arrow.Position = UDim2.new(1, -24, 0, 0)
+			arrow.Size = UDim2.new(0, 18, 1, 0)
+			arrow.TextSize = font
 		end
-		titleLabel.TextSize = math.clamp(plan.title - 2, 14, 28)
-		placeLabel(titleLabel, plan.title)
-		placeLabel(uiLabel, plan.label)
-		placeRow(uiButton, uiCaption, uiArrow, plan.row, false)
-		placeLabel(typingLabel, plan.label)
-		placeRow(typingButton, typingCaption, typingNote, plan.row, not typingButton.Active)
-		placeLabel(glossLabel, plan.label)
-		placeRow(glossButton, glossCaption, glossArrow, plan.row, false)
-		replayButton.Position = UDim2.fromOffset(inner, cursorY)
-		replayButton.Size = UDim2.fromOffset(rowWidth, plan.row)
-		UiChrome.paint(replayButton, "panel")
-		replayButton.TextSize = math.clamp(plan.row - 14, 12, 18)
-		cursorY += plan.row + plan.gap
-		placeLabel(statusLabel, plan.status)
-		placeActions({ applyButton, closeButton }, plan.row)
+		captionLayout(uiCaption, uiArrow, uiButton.Active)
+		captionLayout(glossCaption, glossArrow, glossButton.Active)
+		captionLayout(typingCaption, typingNote, typingButton.Active)
+		local y = #rows * plan.stride + plan.gap
+		local actionWidth = math.max(78, math.round(plan.row * 1.9))
+		box(applyButton, right - actionWidth, y, actionWidth, plan.row)
+		box(closeButton, right, pad, plan.title, plan.title)
+		box(statusLabel, pad, y, right - pad - actionWidth - plan.gap, plan.row)
+		statusLabel.TextSize = math.min(font, 17)
+		applyButton.TextSize = font
+		closeButton.TextSize = font
+		UiChrome.paint(closeButton, "panel")
+		UiChrome.paint(applyButton, "primary")
 		layoutList()
 	end
 
@@ -479,9 +666,11 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		local phase = if type(phaseName) == "string" then phaseName else ""
 		local inMatch = Players.LocalPlayer:GetAttribute("InMatch") == true
 		local open = root:GetAttribute("SettingsOpen") == true
-		if open and PracticeRules.blockedByMatch(inMatch, phase) then
+		if open and PracticeRules.blockedByMatch(inMatch, phase, root:GetAttribute("ResultDismissed") == true) then
 			closeList()
+			drag = nil
 			draft = copyChoice(SettingsState.applied())
+			SoundManager.setVolumes(draft.bgmVolume, draft.sfxVolume)
 			dirty = false
 			shown = false
 			screen.Visible = false
@@ -489,6 +678,7 @@ function SettingsScreen.bind(root: Frame): () -> ()
 			return
 		end
 		if open and not shown then
+			panel.CanvasPosition = Vector2.zero
 			draft = copyChoice(SettingsState.applied())
 			typingId = draft.typing
 			dirty = false
@@ -497,7 +687,9 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		end
 		if not open then
 			closeList()
+			drag = nil
 			draft = copyChoice(SettingsState.applied())
+			SoundManager.setVolumes(draft.bgmVolume, draft.sfxVolume)
 			dirty = false
 			shown = false
 		end
@@ -527,7 +719,7 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		if state == "saving" or state == "loading" then
 			return
 		end
-		SettingsState.apply(draft.uiLocale, draft.gloss, typingId)
+		SettingsState.apply(draft.uiLocale, draft.gloss, typingId, draft.bgmVolume, draft.sfxVolume)
 		render()
 	end)
 	closeButton.Activated:Connect(function()
@@ -538,6 +730,39 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		root:SetAttribute("TutorialOpen", true)
 	end)
 
+	for _, row in { bgmRow, sfxRow } do
+		row.hit.InputBegan:Connect(function(input: InputObject)
+			beginDrag(row, input)
+		end)
+	end
+	local dragChanged = UserInputService.InputChanged:Connect(function(input: InputObject)
+		local active = drag
+		if active == nil then
+			return
+		end
+		local fromTouch = active.touch ~= nil and input == active.touch
+		local fromMouse = active.touch == nil and input.UserInputType == Enum.UserInputType.MouseMovement
+		if not fromTouch and not fromMouse then
+			return
+		end
+		assignVolume(active.bus, snap(alphaFrom(rowFor(active.bus).hit, input.Position.X)))
+		paintVolume(rowFor(active.bus))
+	end)
+	local dragEnded = UserInputService.InputEnded:Connect(function(input: InputObject)
+		local active = drag
+		if active == nil then
+			return
+		end
+		local fromTouch = active.touch ~= nil and input == active.touch
+		local fromMouse = active.touch == nil and input.UserInputType == Enum.UserInputType.MouseButton1
+		if not fromTouch and not fromMouse then
+			return
+		end
+		drag = nil
+		if active.bus == "sfx" and volumeOf(active.bus) ~= active.origin then
+			SoundManager.play("UIConfirm")
+		end
+	end)
 	local stateFolder = ReplicatedStorage:WaitForChild("MatchState")
 	local connections = {
 		root:GetAttributeChangedSignal("SettingsOpen"):Connect(sync),
@@ -545,6 +770,8 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		root:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyLayout),
 		Players.LocalPlayer:GetAttributeChangedSignal("InMatch"):Connect(sync),
 		stateFolder:GetAttributeChangedSignal("Phase"):Connect(sync),
+		dragChanged,
+		dragEnded,
 	}
 	local stopSettings = SettingsState.onChanged(function()
 		if shown and not dirty then
@@ -552,6 +779,8 @@ function SettingsScreen.bind(root: Frame): () -> ()
 			typingId = draft.typing
 		elseif shown and same(draft, SettingsState.applied()) and typingId == SettingsState.applied().typing then
 			dirty = false
+		elseif shown and dirty then
+			SoundManager.setVolumes(draft.bgmVolume, draft.sfxVolume)
 		end
 		if screen.Visible then
 			render()

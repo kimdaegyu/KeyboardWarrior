@@ -12,10 +12,14 @@ UiChrome.Blue = Color3.fromRGB(36, 91, 205)
 UiChrome.Yellow = Color3.fromRGB(255, 211, 74)
 
 function UiChrome.ink(role: string): Color3
-	if role == "selected" then
-		return UiChrome.White
-	end
-	return UiChrome.Navy
+	return if role == "selected" then UiChrome.White else UiChrome.Navy
+end
+
+function UiChrome.round(gui: GuiObject, radius: number?)
+	gui.BorderSizePixel = 0
+	local corner = gui:FindFirstChildOfClass("UICorner") or Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius or 7)
+	corner.Parent = gui
 end
 
 function UiChrome.paint(gui: GuiObject, role: string)
@@ -25,11 +29,7 @@ function UiChrome.paint(gui: GuiObject, role: string)
 	if gui:IsA("ImageLabel") or gui:IsA("ImageButton") then
 		gui.Image = ""
 	end
-	if not gui:FindFirstChildOfClass("UICorner") then
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 7)
-		corner.Parent = gui
-	end
+	UiChrome.round(gui)
 	if not gui:FindFirstChildOfClass("UIStroke") then
 		local stroke = Instance.new("UIStroke")
 		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -55,6 +55,20 @@ function UiChrome.icon(parent: GuiObject, key: string | number): ImageLabel
 		image.ImageColor3 = Color3.new(1, 1, 1)
 	end
 	return image
+end
+
+function UiChrome.closeButton(parent: GuiObject): TextButton
+	local button = Instance.new("TextButton")
+	button.Name = "Close"
+	button.Text = "X"
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 20
+	button.TextColor3 = UiChrome.Navy
+	button.AnchorPoint = Vector2.new(1, 0)
+	button.ZIndex = parent.ZIndex + 5
+	UiChrome.paint(button, "panel")
+	button.Parent = parent
+	return button
 end
 
 return UiChrome

@@ -11,6 +11,8 @@ local RankRules = require(ReplicatedStorage.Shared.RankRules)
 local DataConfig = require(script.Parent.DataConfig)
 local ProfileService = require(script.Parent.ProfileService)
 
+local PlayerStore = require(script.Parent.PlayerStore)
+
 local RankService = {}
 
 local scope = if RunService:IsStudio() then DataConfig.studioScope else DataConfig.liveScope
@@ -18,15 +20,6 @@ local store = DataStoreService:GetOrderedDataStore(DataConfig.rankStoreName, sco
 local started = false
 local stateEvent: RemoteEvent? = nil
 local names: {[number]: string} = {}
-local pending: {[number]: number} = {}
-local publishing: {[number]: boolean} = {}
-local boardRows: {RankRules.Placed}? = nil
-local boardAt = 0
-local boardFailedAt = -10
-local boardStatus = "empty"
-local fetching = false
-local waiters: {thread} = {}
-
 local function remote(name: string): RemoteEvent
 	local existing = ReplicatedStorage:FindFirstChild(name)
 	if existing ~= nil and existing:IsA("RemoteEvent") then
@@ -55,6 +48,15 @@ local function playerName(userId: number): string
 	names[userId] = name
 	return name
 end
+
+local pending: {[number]: number} = {}
+local publishing: {[number]: boolean} = {}
+local boardRows: {RankRules.Placed}? = nil
+local boardAt = 0
+local boardFailedAt = -10
+local boardStatus = "empty"
+local fetching = false
+local waiters: {thread} = {}
 
 local function publish(userId: number, score: number): boolean
 	local ok = pcall(function()
@@ -90,18 +92,36 @@ local function pump(userId: number)
 	end)
 end
 
-function RankService.noteSaved(userId: number)
-	local profile = ProfileService.read(userId)
-	if profile == nil then
-		return
-	end
-	local score, recorded = RankRules.recordOf(profile.bestScore, profile.ranked)
-	if not recorded or score == nil then
-		return
-	end
+local function noteSaved(userId: number, score: number)
 	local queued = pending[userId]
 	pending[userId] = if queued == nil then score else math.max(queued, score)
 	pump(userId)
+end
+
+-- Reuse offline profile reads across board refreshes. A changed score bypasses the cache.
+local details: {[number]: {score: number, cpm: number?, language: string?, expires: number}} = {}
+local function scoreDetails(userId: number, score: number): (number?, string?)
+	local profile = ProfileService.read(userId)
+	if profile then
+		if profile.bestScore == score then return profile.bestScoreCpm, profile.bestScoreLanguage end
+		return nil, nil
+	end
+	local cached = details[userId]
+	if cached and cached.score == score and os.clock() < cached.expires then
+		return cached.cpm, cached.language
+	end
+	local ok, result = pcall(function()
+		return PlayerStore.getDocument(userId):Read()
+	end)
+	if ok and result.success then
+		local data = result.data
+		local cpm = if data.bestScore == score then data.bestScoreCpm else nil
+		local language = if data.bestScore == score then data.bestScoreLanguage else nil
+		details[userId] = {score = score, cpm = cpm, language = language, expires = os.clock() + constants.Rank.CacheSeconds * 5}
+		return cpm, language
+	end
+	if cached and cached.score == score then return cached.cpm, cached.language end
+	return nil, nil
 end
 
 local function fetchBoard(): boolean
@@ -111,6 +131,9 @@ local function fetchBoard(): boolean
 	if not ok or type(page) ~= "table" then
 		return false
 	end
+	for userId, detail in details do
+		if detail.expires <= os.clock() then details[userId] = nil end
+	end
 	local entries: {RankRules.Entry} = {}
 	for _, item in page do
 		if type(item) ~= "table" then
@@ -119,9 +142,12 @@ local function fetchBoard(): boolean
 		local userId = tonumber(item.key)
 		local score = item.value
 		if type(userId) == "number" and type(score) == "number" then
+			local cpm, language = scoreDetails(userId, score)
 			table.insert(entries, {
 				userId = userId,
 				name = playerName(userId),
+				cpm = cpm,
+				language = language,
 				score = score,
 			})
 		end
@@ -165,19 +191,29 @@ local function board(): {RankRules.Placed}?
 	return boardRows
 end
 
-local function payload(userId: number)
+local function snapshot()
 	board()
+	return boardStatus, boardRows or {}
+end
+
+function RankService.noteSaved(userId: number)
 	local profile = ProfileService.read(userId)
-	local score, recorded = nil, false
-	if profile ~= nil then
-		score, recorded = RankRules.recordOf(profile.bestScore, profile.ranked)
+	if not profile then return end
+	local score, recorded = RankRules.recordOf(profile.bestScore, profile.ranked)
+	if recorded and score ~= nil then
+		details[userId] = nil
+		noteSaved(userId, score)
 	end
-	return {
-		status = boardStatus,
-		rows = boardRows or {},
-		recorded = recorded,
-		bestScore = score,
-	}
+end
+
+local function payload(userId: number)
+	local status, rows = snapshot()
+	local profile = ProfileService.read(userId)
+	local best, recorded = nil, false
+	if profile then
+		best, recorded = RankRules.recordOf(profile.bestScore, profile.ranked)
+	end
+	return {status = status, rows = rows, recorded = recorded, bestScore = best, bestScoreLanguage = if profile then profile.bestScoreLanguage else nil, bestScoreCpm = if profile then profile.bestScoreCpm else nil}
 end
 
 local function push(player: Player)

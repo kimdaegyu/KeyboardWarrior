@@ -1,63 +1,36 @@
 --!strict
--- One rank card. The title, personal best, and close button stay on screen. Only the list scrolls.
-
-export type Plan = {
-	margin: number,
-	gap: number,
-	panelWidth: number,
-	title: number,
-	mine: number,
-	header: number,
-	row: number,
-	close: number,
-	listHeight: number,
-	compact: boolean,
-}
-
 local RankLayout = {}
 
-function RankLayout.plan(width: number, height: number, compactHeight: number?, compactWidth: number?): Plan
-	local heightLimit = if compactHeight ~= nil then compactHeight else 430
-	local widthLimit = if compactWidth ~= nil then compactWidth else 760
-	local compact = height <= heightLimit or width <= widthLimit
-	local margin = if compact then 8 else 20
-	local gap = 4
-	local title = if compact then 22 else 28
-	local mine = if compact then 32 else 40
-	local header = if compact then 18 else 22
-	local row = if compact then 28 else 36
-	local close = if compact then 36 else 44
-	local chrome = margin * 2 + title + mine + header + close + gap * 4
-	local listHeight = height - chrome
-	if listHeight < row then
-		local overflow = row - listHeight
-		title = math.max(18, title - math.floor(overflow / 4))
-		mine = math.max(24, mine - math.floor(overflow / 2))
-		header = math.max(14, header - math.floor(overflow / 4))
-		chrome = margin * 2 + title + mine + header + close + gap * 4
-		listHeight = math.max(row, height - chrome)
-	end
+function RankLayout.plan(width: number, height: number)
+	local scale = math.min(width / 1672, height / 941, 1)
+	local compact = height <= 430 or width <= 760
+	local gap = math.max(8, math.round(26 * scale))
+	local group = math.min(width - 16, if compact then width * 0.95 else math.max(685, math.round(1200 * scale)))
+	local personal = math.floor((group - gap) * 0.298)
+	local pad = math.max(8, math.round(32 * scale))
+	local topLimit = 6
+	local row = math.max(24, math.round(45 * scale))
+	local title = math.max(25, math.round(74 * scale))
+	local columns = math.max(20, math.round(42 * scale))
+	local close = math.max(if compact then 36 else 44, math.round(54 * scale))
+	title = math.max(title, close)
+	local boardHeight = math.min(height - topLimit - 6, pad * 2 + title + columns + row * 6)
+	local listHeight = math.max(0, boardHeight - 2 * pad - title - columns)
 	return {
-		margin = margin,
-		gap = gap,
-		panelWidth = math.min(math.max(0, width - margin * 2), 720),
-		title = title,
-		mine = mine,
-		header = header,
-		row = row,
-		close = close,
-		listHeight = listHeight,
-		compact = compact,
+		left = math.floor((width - group) / 2), top = math.max(topLimit, math.floor((height - boardHeight) / 2)),
+		personal = personal, board = group - personal - gap, gap = gap, pad = pad,
+		height = boardHeight, personalHeight = math.min(boardHeight, math.max(132, math.round(286 * scale))),
+		title = title, columns = columns, row = row, listHeight = listHeight, close = close,
 	}
 end
 
 function RankLayout.selfCheck()
-	local phone = RankLayout.plan(568, 320)
-	local chrome = phone.margin * 2 + phone.title + phone.mine + phone.header + phone.close + phone.gap * 4
-	assert(phone.compact and phone.close == 36 and phone.row >= 28, "the phone rank card keeps a tappable close button")
-	assert(chrome + phone.listHeight <= 320 and phone.listHeight >= phone.row, "568×320 keeps the title and close button outside the scroller")
-	local desktop = RankLayout.plan(1366, 768)
-	assert(not desktop.compact and desktop.listHeight > phone.listHeight and desktop.close > phone.close, "a wide rank card gives the list more room")
+	for _, size in { {568, 240}, {844, 320}, {1672, 941} } do
+		local width, height = size[1], size[2]
+		local p = RankLayout.plan(width, height)
+		assert(p.listHeight >= p.row and p.top + p.height <= height)
+		assert(p.left + p.personal + p.gap + p.board <= width)
+	end
 end
 
 return RankLayout

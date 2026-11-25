@@ -20,6 +20,15 @@ return table.freeze({
 		-- Adjacent centres are one pad diameter plus the edge-to-edge gap apart.
 		PadCenterRadius = (padDiameter + padGap) / (2 * math.sin(math.pi / maxParticipants)),
 	}),
+	Floor = table.freeze({
+		ScorePerFloor = 5,
+		FloorHeight = 1,
+		FloorAnimationDuration = 0.2,
+		CharacterRiseDuration = 0,
+		FloorStartScale = 0.1,
+		FloorEndScale = 1,
+		RimRotationSpeed = 45,
+	}),
 	Rank = table.freeze({
 		TopCount = 50,
 		CacheSeconds = 60,

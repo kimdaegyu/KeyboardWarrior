@@ -36,6 +36,8 @@ local function copyProfile(cache: any): Profile
 		gold = cache.gold,
 		exp = cache.exp,
 		bestScore = cache.bestScore,
+		bestScoreCpm = cache.bestScoreCpm,
+		bestScoreLanguage = cache.bestScoreLanguage,
 		grants = grants,
 	}
 	if type(cache.uiLocale) == "string" then
@@ -46,6 +48,12 @@ local function copyProfile(cache: any): Profile
 	end
 	if type(cache.typing) == "string" then
 		profile.typing = cache.typing
+	end
+	if type(cache.bgmVolume) == "number" then
+		profile.bgmVolume = cache.bgmVolume
+	end
+	if type(cache.sfxVolume) == "number" then
+		profile.sfxVolume = cache.sfxVolume
 	end
 	if type(cache.tutorialSeen) == "boolean" then
 		profile.tutorialSeen = cache.tutorialSeen
@@ -155,12 +163,12 @@ function ProfileService.replace(userId: number, profile: Profile): boolean
 	return true
 end
 
-function ProfileService.commit(userId: number, settlementId: string, gold: number, exp: number, score: number, finished: boolean): (boolean, string)
+function ProfileService.commit(userId: number, settlementId: string, gold: number, exp: number, score: number, finished: boolean, cpm: number?, language: string?): (boolean, string)
 	local document = sessions[userId]
 	if document == nil or not document:IsOpen() or document:IsClosing() then
 		return false, "unavailable"
 	end
-	local updated, applied = RewardRules.applyGrant(document:GetCache(), settlementId, gold, exp, score, finished)
+	local updated, applied = RewardRules.applyGrant(document:GetCache(), settlementId, gold, exp, score, finished, cpm, language)
 	if applied then
 		document:SetCache(updated)
 		return true, "pending"
@@ -168,7 +176,7 @@ function ProfileService.commit(userId: number, settlementId: string, gold: numbe
 	return true, "already"
 end
 
-function ProfileService.applySettings(userId: number, uiLocale: any, gloss: any, typing: any, languages: any): (boolean, string)
+function ProfileService.applySettings(userId: number, uiLocale: any, gloss: any, typing: any, languages: any, bgmVolume: any, sfxVolume: any): (boolean, string)
 	local document = sessions[userId]
 	if document == nil or not document:IsOpen() or document:IsClosing() then
 		return false, "unavailable"
@@ -176,7 +184,7 @@ function ProfileService.applySettings(userId: number, uiLocale: any, gloss: any,
 	if type(languages) ~= "table" then
 		return false, "invalid"
 	end
-	local updated, reason = SettingsRules.apply(copyProfile(document:GetCache()), languages, uiLocale, gloss, typing)
+	local updated, reason = SettingsRules.apply(copyProfile(document:GetCache()), languages, uiLocale, gloss, typing, bgmVolume, sfxVolume)
 	if updated == nil then
 		return false, reason
 	end

@@ -15,6 +15,7 @@ local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
 local UIImageUtil = require(ReplicatedStorage.Shared.UIImageUtil)
 local ShopState = require(script.Parent.ShopState)
 
+local Layout = require(script.Parent.Layout)
 local ShopScreen = {}
 
 function ShopScreen.bind(root: Frame): () -> ()
@@ -144,7 +145,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 	end
 
 	local buyButton = actionButton("Buy")
-	local closeButton = actionButton("Close")
+	local closeButton = UiChrome.closeButton(card)
 	local previewArt = Instance.new("ImageLabel")
 	previewArt.Name = "ProductArt"
 	previewArt.BackgroundTransparency = 1
@@ -266,9 +267,11 @@ function ShopScreen.bind(root: Frame): () -> ()
 	local function applyLayout()
 		local bounds = root.AbsoluteSize
 		if bounds.X < 50 or bounds.Y < 50 then return end
-		local size = Vector2.new(math.min(bounds.X - 16, 800), math.min(bounds.Y - 16, 540))
+		local metrics = Layout.metrics(bounds)
+		local width, height = ShopLayout.windowSize(bounds.X, bounds.Y, metrics.margin)
+		local size = Vector2.new(width, height)
 		card.Size = UDim2.fromOffset(size.X, size.Y)
-		local plan = ShopLayout.plan(size.X, size.Y, constants.UI.CompactHeight, constants.UI.CompactWidth)
+		local plan = ShopLayout.plan(size.X, size.Y, constants.UI.CompactHeight, constants.UI.CompactWidth, metrics.target)
 		local inner = math.max(0, size.X - plan.margin * 2)
 		UiChrome.paint(card, "panel")
 		local y = plan.margin
@@ -310,13 +313,13 @@ function ShopScreen.bind(root: Frame): () -> ()
 			button.TextColor3 = UiChrome.ink(role)
 		end
 		y += plan.body + plan.gap
-		local buttonWidth = math.floor((inner - plan.gap) / 2)
+		local closeSize = math.min(plan.action, plan.title + plan.gap + plan.gold)
 		buyButton.Position = UDim2.fromOffset(plan.margin, y)
-		buyButton.Size = UDim2.fromOffset(buttonWidth, plan.action)
-		closeButton.Position = UDim2.fromOffset(plan.margin + buttonWidth + plan.gap, y)
-		closeButton.Size = UDim2.fromOffset(inner - buttonWidth - plan.gap, plan.action)
+		buyButton.Size = UDim2.fromOffset(inner, plan.action)
+		closeButton.Position = UDim2.fromOffset(size.X - plan.margin, plan.margin)
+		closeButton.Size = UDim2.fromOffset(closeSize, closeSize)
 		buyButton.TextSize = math.clamp(plan.action - 16, 12, 18)
-		closeButton.TextSize = buyButton.TextSize
+		closeButton.TextSize = math.round(closeSize * 0.55)
 		local buyFace = buyButton:GetAttribute("Face")
 		local buyRole = if type(buyFace) == "string" then buyFace else "primary"
 		UiChrome.paint(buyButton, buyRole)
@@ -327,7 +330,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 
 	render = function()
 		titleLabel.Text = Localization.getText("Shop.Title")
-		closeButton.Text = Localization.getText("Shop.Close")
+
 		bodyTab.Text = Localization.getText("Shop.TabBody")
 		rimTab.Text = Localization.getText("Shop.TabRim")
 		effectTab.Text = Localization.getText("Shop.TabEffect")
@@ -439,7 +442,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 		local phaseName = if folder ~= nil then folder:GetAttribute("Phase") else nil
 		local phase = if type(phaseName) == "string" then phaseName else ""
 		local open = root:GetAttribute("ShopOpen") == true
-		if open and PracticeRules.blockedByMatch(Players.LocalPlayer:GetAttribute("InMatch") == true, phase) then
+		if open and PracticeRules.blockedByMatch(Players.LocalPlayer:GetAttribute("InMatch") == true, phase, root:GetAttribute("ResultDismissed") == true) then
 			shown = false
 			touched = false
 			screen.Visible = false

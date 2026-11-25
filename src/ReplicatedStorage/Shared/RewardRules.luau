@@ -31,6 +31,8 @@ export type Profile = {
 	gold: number,
 	exp: number,
 	bestScore: number,
+	bestScoreCpm: number?,
+	bestScoreLanguage: string?,
 	grants: {string}?,
 	uiLocale: string?,
 	gloss: string?,
@@ -41,6 +43,8 @@ export type Profile = {
 	body: string?,
 	rim: string?,
 	effect: string?,
+	bgmVolume: number?,
+	sfxVolume: number?,
 }
 
 export type RankRow = {
@@ -136,7 +140,7 @@ function RewardRules.profileAfterOpen(success: boolean, data: Profile?): Profile
 	return data
 end
 
-function RewardRules.applyGrant(profile: Profile, settlementId: string, gold: number, exp: number, score: number, finished: boolean): (Profile, boolean)
+function RewardRules.applyGrant(profile: Profile, settlementId: string, gold: number, exp: number, score: number, finished: boolean, cpm: number?, language: string?): (Profile, boolean)
 	local grants: {string} = {}
 	if type(profile.grants) == "table" then
 		for _, id in profile.grants do
@@ -151,9 +155,18 @@ function RewardRules.applyGrant(profile: Profile, settlementId: string, gold: nu
 		table.remove(grants, 1)
 	end
 	local best = profile.bestScore
+	local bestScoreCpm = profile.bestScoreCpm
+	local bestScoreLanguage = profile.bestScoreLanguage
 	local ranked = profile.ranked == true
 	if finished then
-		best = math.max(best, score)
+		if score > best then
+			best = score
+			bestScoreCpm = cpm
+			bestScoreLanguage = language
+		elseif score == best and cpm ~= nil and (bestScoreCpm == nil or cpm > bestScoreCpm or (cpm == bestScoreCpm and bestScoreLanguage == nil)) then
+			bestScoreCpm = cpm
+			bestScoreLanguage = language
+		end
 		ranked = true
 	end
 	local updated: Profile = {
@@ -161,6 +174,8 @@ function RewardRules.applyGrant(profile: Profile, settlementId: string, gold: nu
 		gold = profile.gold + gold,
 		exp = profile.exp + exp,
 		bestScore = best,
+		bestScoreCpm = bestScoreCpm,
+		bestScoreLanguage = bestScoreLanguage,
 		grants = grants,
 	}
 	if ranked then
@@ -174,6 +189,12 @@ function RewardRules.applyGrant(profile: Profile, settlementId: string, gold: nu
 	end
 	if type(profile.typing) == "string" then
 		updated.typing = profile.typing
+	end
+	if type(profile.bgmVolume) == "number" then
+		updated.bgmVolume = profile.bgmVolume
+	end
+	if type(profile.sfxVolume) == "number" then
+		updated.sfxVolume = profile.sfxVolume
 	end
 	if type(profile.tutorialSeen) == "boolean" then
 		updated.tutorialSeen = profile.tutorialSeen
@@ -230,6 +251,18 @@ function RewardRules.selfCheck(rewardRows: {RewardRow}, levelRows: {LevelRow})
 	assert(leftApplied and left.gold == leaveGold and left.bestScore == 20 and left.ranked == nil, "leaving does not replace the best score")
 	local practiced, practiceApplied = RewardRules.applyGrant(paid, "server-a:1:practice", 0, 0, 150, false)
 	assert(practiceApplied and practiced.bestScore == paid.bestScore and practiced.ranked == true, "practice does not change a finished best score")
+	local measured = RewardRules.applyGrant(before, "speed-a", 0, 0, 20, true, 120)
+	local slower = RewardRules.applyGrant(measured, "speed-b", 0, 0, 15, true, 180)
+	local earlyExit = RewardRules.applyGrant(slower, "speed-c", 0, 0, 30, false, 200)
+	assert(earlyExit.bestScoreCpm == 120 and earlyExit.bestScore == 20, "only completed matches update personal best CPM")
+	local newBest = RewardRules.applyGrant(earlyExit, "new-best", 0, 0, 35, true, 90, "EN")
+	assert(newBest.bestScoreCpm == 90, "a higher score carries its own CPM")
+	local tiedBest = RewardRules.applyGrant(newBest, "same-score", 0, 0, 35, true, 100, "KO")
+	assert(tiedBest.bestScoreLanguage == "KO" and tiedBest.bestScoreCpm == 100, "a tied best can improve its CPM")
+	local slowerTie = RewardRules.applyGrant(tiedBest, "slower-tie", 0, 0, 35, true, 95, "EN")
+	assert(slowerTie.bestScoreLanguage == "KO" and slowerTie.bestScoreCpm == 100)
+	local unknown = RewardRules.applyGrant(tiedBest, "unmeasured", 0, 0, 40, true)
+	assert(unknown.bestScoreLanguage == nil and unknown.bestScoreCpm == nil, "do not pair a new score with an older CPM")
 	local climbing: Profile = { schemaVersion = 1, gold = 0, exp = 0, bestScore = 0 }
 	local firstScore, firstOk = RewardRules.applyGrant(climbing, "rank:100", 0, 0, 100, true)
 	local lowerScore, lowerOk = RewardRules.applyGrant(firstScore, "rank:80", 0, 0, 80, true)
@@ -262,7 +295,7 @@ function RewardRules.selfCheck(rewardRows: {RewardRow}, levelRows: {LevelRow})
 
 	if rates.completeExp == 10 then
 		local level, floorExp, nextExp = RewardRules.progress(90 + rates.completeExp, levels)
-		assert(90 + rates.completeExp == 100 and level == 2 and floorExp == 100 and nextExp == nil, "100 exp is level 2")
+		assert(90 + rates.completeExp == 100 and level == 2 and floorExp == 100 and nextExp == (if levels[3] then levels[3].totalExp else nil), "100 exp is level 2")
 		assert(RewardRules.progress(90, levels) == 1, "90 exp stays on level 1")
 	end
 

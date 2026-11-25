@@ -5,6 +5,8 @@ export type Entry = {
 	userId: number,
 	name: string?,
 	score: number,
+	cpm: number?,
+	language: string?,
 }
 
 export type Placed = {
@@ -12,6 +14,8 @@ export type Placed = {
 	name: string,
 	score: number,
 	rank: number,
+	cpm: number?,
+	language: string?,
 }
 
 local RankRules = {}
@@ -47,6 +51,8 @@ function RankRules.place(entries: {Entry}): {Placed}
 			userId = entry.userId,
 			name = if type(entry.name) == "string" and entry.name ~= "" then entry.name else tostring(entry.userId),
 			score = entry.score,
+			cpm = entry.cpm,
+			language = entry.language,
 			rank = rank,
 		})
 	end
@@ -82,10 +88,11 @@ function RankRules.selfCheck()
 	assert(RankRules.storedValue(100, 120) == 120, "a higher score replaces the board")
 	assert(RankRules.storedValue(120, 120) == nil, "the same score does not write again")
 	local rows = RankRules.place({
-		{ userId = 1, name = "A", score = 120 },
-		{ userId = 2, name = "B", score = 120 },
+		{ userId = 1, name = "A", score = 120, cpm = 90 },
+		{ userId = 2, name = "B", score = 120, cpm = 125 },
 		{ userId = 3, name = "C", score = 100 },
 	})
+	assert(rows[1].cpm == 90 and rows[2].cpm == 125 and rows[3].cpm == nil, "each row keeps its score-linked CPM")
 	assert(rows[1].rank == 1 and rows[2].rank == 1 and rows[3].rank == 3, "tied scores share a rank and the next rank skips")
 end
 

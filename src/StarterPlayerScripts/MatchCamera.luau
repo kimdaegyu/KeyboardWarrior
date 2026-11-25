@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local FloorRules = require(game:GetService("ReplicatedStorage").Shared.FloorRules)
 local MatchCamera = {}
 
 local BACK = 34
@@ -13,8 +14,11 @@ local UP = 18
 local LOOK_LIFT = 2
 local PAD_REACH = 18
 
+local RENDER_NAME = "KeyboardWarriorMatchCamera"
+
 local playing = false
-local connection: RBXScriptConnection? = nil
+local orbiting = false
+local bound = false
 local savedType: Enum.CameraType? = nil
 local savedSubject: Instance? = nil
 local savedCamera: Camera? = nil
@@ -62,49 +66,114 @@ local function nearestPad(root: BasePart): BasePart?
 	return framedPad
 end
 
+local function padSurface(pad: BasePart): number
+	local origin = pad.CFrame
+	local size = pad.Size
+	return origin.Position.Y
+		+ math.abs(origin.RightVector.Y) * size.X / 2
+		+ math.abs(origin.UpVector.Y) * size.Y / 2
+		+ math.abs(origin.LookVector.Y) * size.Z / 2
+end
+
+local function unbind()
+	if not bound then
+		return
+	end
+	bound = false
+	RunService:UnbindFromRenderStep(RENDER_NAME)
+end
+
 local function step()
 	local camera = currentCamera()
 	local character = Players.LocalPlayer.Character
 	local root = if character ~= nil then character:FindFirstChild("HumanoidRootPart") else nil
 	local arena = Workspace:FindFirstChild("Arena")
 	local center = if arena ~= nil then arena:FindFirstChild("ArenaCenter") else nil
-	if camera == nil or root == nil or not root:IsA("BasePart") or center == nil or not center:IsA("BasePart") then
+	if camera == nil or character == nil or root == nil or not root:IsA("BasePart") or center == nil or not center:IsA("BasePart") then
 		return
 	end
 	local pad = nearestPad(root)
 	if pad == nil then
 		return
 	end
-	if savedType == nil or savedCamera ~= camera then
+	if savedType == nil then
 		savedCamera = camera
 		savedType = camera.CameraType
 		savedSubject = camera.CameraSubject
+	else
+		savedCamera = camera
 	end
-	local flat = Vector3.new(pad.Position.X - center.Position.X, 0, pad.Position.Z - center.Position.Z)
+	local flat = Vector3.new(root.Position.X - center.Position.X, 0, root.Position.Z - center.Position.Z)
+	if flat.Magnitude < 1 then
+		flat = Vector3.new(pad.Position.X - center.Position.X, 0, pad.Position.Z - center.Position.Z)
+	end
 	if flat.Magnitude < 1 then
 		return
 	end
 	local outward = flat.Unit
-	local eye = pad.Position + outward * BACK + Vector3.yAxis * UP
-	local look = center.Position + Vector3.yAxis * LOOK_LIFT
+	local rise = root.Position.Y - (padSurface(pad) + FloorRules.standOffset(character, root))
+	local eye = Vector3.new(root.Position.X, pad.Position.Y + UP + rise, root.Position.Z) + outward * BACK
+	local look = Vector3.new(center.Position.X, center.Position.Y + LOOK_LIFT + rise, center.Position.Z)
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.CFrame = CFrame.lookAt(eye, look)
 end
 
+local function enableLook()
+	local camera = currentCamera()
+	local character = Players.LocalPlayer.Character
+	local humanoid = if character ~= nil then character:FindFirstChildOfClass("Humanoid") else nil
+	if camera ~= nil then
+		camera.CameraType = Enum.CameraType.Custom
+		if humanoid ~= nil then
+			camera.CameraSubject = humanoid
+		end
+	end
+	Players.LocalPlayer.CameraMode = Enum.CameraMode.Classic
+	local scripts = Players.LocalPlayer:FindFirstChild("PlayerScripts")
+	local playerModule = if scripts ~= nil then scripts:FindFirstChild("PlayerModule") else nil
+	local cameraModule = if playerModule ~= nil then playerModule:FindFirstChild("CameraModule") else nil
+	local input = if cameraModule ~= nil then cameraModule:FindFirstChild("CameraInput") else nil
+	if input ~= nil and input:IsA("ModuleScript") then
+		local ok, result = pcall(require, input)
+		if ok and type(result) == "table" and type(result.setInputEnabled) == "function" then
+			result.setInputEnabled(true)
+		end
+	end
+end
+
+function MatchCamera.setOrbit(on: boolean)
+	orbiting = on
+	if playing then
+		return
+	end
+	unbind()
+	if orbiting then
+		enableLook()
+	else
+		restore()
+	end
+end
+
 function MatchCamera.setPlaying(nextPlaying: boolean)
 	if nextPlaying == playing then
+		if not playing and orbiting then
+			enableLook()
+		end
 		return
 	end
 	playing = nextPlaying
-	if connection ~= nil then
-		connection:Disconnect()
-		connection = nil
-	end
+	unbind()
 	if not playing then
-		restore()
+		if orbiting then
+			enableLook()
+		else
+			restore()
+		end
 		return
 	end
-	connection = RunService.RenderStepped:Connect(step)
+	orbiting = false
+	RunService:BindToRenderStep(RENDER_NAME, Enum.RenderPriority.Last.Value + 1, step)
+	bound = true
 	step()
 end
 

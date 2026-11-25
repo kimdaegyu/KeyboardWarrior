@@ -16,6 +16,7 @@ local ShopState = {}
 
 local status = "loading"
 local reason = "ok"
+local level: number? = nil
 local gold = 0
 local body = ""
 local rim = ""
@@ -39,6 +40,10 @@ end
 
 function ShopState.reason(): string
 	return reason
+end
+
+function ShopState.level(): number?
+	return level
 end
 
 function ShopState.gold(): number
@@ -124,6 +129,7 @@ local function onState(message: any)
 	received = true
 	status = message.status
 	reason = if type(message.reason) == "string" then message.reason else "ok"
+	level = if type(message.level) == "number" then message.level else nil
 	gold = if type(message.gold) == "number" then message.gold else 0
 	body = if type(message.body) == "string" then message.body else ""
 	rim = if type(message.rim) == "string" then message.rim else ""

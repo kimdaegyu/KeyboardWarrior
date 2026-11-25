@@ -47,6 +47,10 @@ local function isTyping(value: any): boolean
 	return value == nil or isLanguageCode(value)
 end
 
+local function isVolume(value: any): boolean
+	return value == nil or (type(value) == "number" and value == math.floor(value) and value >= 0 and value <= 100 and value % 5 == 0)
+end
+
 local function isSeen(value: any): boolean
 	return value == nil or type(value) == "boolean"
 end
@@ -91,8 +95,10 @@ local function check(value: any)
 	if type(value) ~= "table" or value.schemaVersion ~= 1 then
 		return false, value
 	end
-	local economy = isCount(value.gold) and isCount(value.exp) and isCount(value.bestScore) and isGrantList(value.grants)
-	local settings = isUiLocale(value.uiLocale) and isGloss(value.gloss) and isTyping(value.typing) and isSeen(value.tutorialSeen) and isSeen(value.ranked)
+	local recordLanguage = value.bestScoreLanguage
+	local validRecordLanguage = recordLanguage == nil or (type(recordLanguage) == "string" and isLanguageCode(string.lower(recordLanguage)))
+	local economy = validRecordLanguage and isCount(value.gold) and isCount(value.exp) and (value.bestScoreCpm == nil or isCount(value.bestScoreCpm)) and isCount(value.bestScore) and isGrantList(value.grants)
+	local settings = isUiLocale(value.uiLocale) and isGloss(value.gloss) and isTyping(value.typing) and isSeen(value.tutorialSeen) and isSeen(value.ranked) and isVolume(value.bgmVolume) and isVolume(value.sfxVolume)
 	local shop = isOwnedList(value.owned) and isSlot(value.body) and isSlot(value.rim) and isSlot(value.effect)
 	return economy and settings and shop, value
 end

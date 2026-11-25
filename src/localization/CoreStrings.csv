@@ -35,7 +35,7 @@ Result.Saving,Saving,,,저장 중,保存中,Menyimpan,Đang lưu,กำลัง
 Result.Saved,Saved,,,저장 완료,保存完了,Tersimpan,Đã lưu,บันทึกแล้ว,सहेजा गया,Guardado,Salvo
 Result.SaveFailed,Save failed,,,저장 실패,保存失敗,Gagal menyimpan,Lưu thất bại,บันทึกไม่สำเร็จ,सहेजना विफल,Error al guardar,Falha ao salvar
 Result.SaveUnavailable,Profile unavailable,,,프로필을 열지 못했습니다,プロフィールを開けません,Profil tidak tersedia,Không mở được hồ sơ,เปิดโปรไฟล์ไม่ได้,प्रोफ़ाइल उपलब्ध नहीं,Perfil no disponible,Perfil indisponível
-Result.Next,Next match soon,,,다음 경기까지 잠시,次の試合まで,Menunggu laga berikutnya,Trận sau sắp bắt đầu,รอรอบถัดไป,अगला मैच जल्द,Próxima partida pronto,Próxima partida em breve
+Result.Next,Next match soon ({seconds}s),,,다음 경기까지 잠시 ({seconds}초),次の試合まで ({seconds}秒),Menunggu laga berikutnya ({seconds} dtk),Trận sau sắp bắt đầu ({seconds} s),รอรอบถัดไป ({seconds} วิ.),अगला मैच जल्द ({seconds} से.),Próxima partida pronto ({seconds} s),Próxima partida em breve ({seconds} s)
 Practice.Start,Personal practice,,,개인 연습,個人練習,Latihan pribadi,Luyện cá nhân,ฝึกส่วนตัว,व्यक्तिगत अभ्यास,Práctica personal,Prática pessoal
 Practice.Outside,Practice is available outside the circle,,,원 밖에서 개인 연습할 수 있습니다,円の外で個人練習できます,Latihan tersedia di luar lingkaran,Có thể luyện ngoài vòng,ฝึกส่วนตัวได้นอกวง,घेरे के बाहर अभ्यास कर सकते हैं,Puedes practicar fuera del círculo,A prática fica fora do círculo
 Practice.Exit,Exit,,,나가기,出る,Keluar,Thoát,ออก,बाहर,Salir,Sair
@@ -109,3 +109,17 @@ Shop.Name.starter_effect,Basic effect,,,기본 이펙트,,,,,,,
 Shop.Name.pilot_body,Neon cyan,,,네온 청록,,,,,,,
 Shop.Name.pilot_rim,Gold ring,,,골드 링,,,,,,,
 Shop.Name.pilot_effect,Sparkles,,,반짝임,,,,,,,
+Settings.TutorialLabel,Tutorial,,,튜토리얼,チュートリアル,Tutorial,Hướng dẫn,บทแนะนำ,ट्यूटोरियल,Tutorial,Tutorial
+Settings.Replay,Replay,,,다시 보기,もう一度見る,Putar ulang,Xem lại,ดูอีกครั้ง,फिर देखें,Volver a ver,Rever
+Settings.GameLanguage,Game language,,,게임 언어,ゲーム言語,Bahasa game,Ngôn ngữ trò chơi,ภาษาเกม,गेम की भाषा,Idioma del juego,Idioma do jogo
+Settings.TranslationLanguage,Translation language,,,번역 언어,翻訳言語,Bahasa terjemahan,Ngôn ngữ dịch,ภาษาแปล,अनुवाद की भाषा,Idioma de traducción,Idioma da tradução
+Settings.MobileInput,Mobile input language,,,모바일 입력 언어,モバイル入力言語,Bahasa input seluler,Ngôn ngữ nhập di động,ภาษาที่ใช้พิมพ์บนมือถือ,मोबाइल इनपुट भाषा,Idioma de entrada móvil,Idioma de entrada móvel
+Settings.MusicVolume,Music volume,,,배경음악,音楽の音量,Volume musik,Âm lượng nhạc,ระดับเสียงเพลง,संगीत वॉल्यूम,Volumen de la música,Volume da música
+Settings.SoundEffectsVolume,Sound effects volume,,,효과음,効果音の音量,Volume efek suara,Âm lượng hiệu ứng,ระดับเสียงเอฟเฟกต์,ध्वनि प्रभाव वॉल्यूम,Volumen de efectos,Volume dos efeitos
+Rank.RecordTitle,My record,,,내 기록,自分の記録,Rekor saya,Kỷ lục của tôi,สถิติของฉัน,मेरा रिकॉर्ड,Mi récord,Meu recorde
+Rank.Ordinal,#{rank},,,{rank}위,{rank}位,#{rank},Hạng {rank},อันดับ {rank},#{rank},#{rank},#{rank}
+Rank.SelfName,{name} · Me,,,{name} · 나,{name} · 自分,{name} · Saya,{name} · Tôi,{name} · ฉัน,{name} · मैं,{name} · Yo,{name} · Eu
+Rank.Outside,Outside top {count},,,상위 {count}위 밖,上位{count}位圏外,Di luar {count} besar,Ngoài top {count},นอกอันดับ {count} แรก,शीर्ष {count} से बाहर,Fuera del top {count},Fora do top {count}
+Match.CpmValue,{value} CPM,,,{value}타/분,{value} 打/分,{value} CPM,{value} CPM,{value} CPM,{value} CPM,{value} CPM,{value} CPM
+Rank.Language,Language,,,언어,言語,Bahasa,Ngôn ngữ,ภาษา,भाषा,Idioma,Idioma
+Rank.Cpm,CPM,,,분당타수,打鍵/分,CPM,CPM,CPM,CPM,CPM,CPM

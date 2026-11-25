@@ -235,7 +235,7 @@ function TutorialScreen.bind(root: Frame): () -> ()
 		local folder = ReplicatedStorage:FindFirstChild("MatchState")
 		local phaseName = if folder ~= nil then folder:GetAttribute("Phase") else nil
 		local phase = if type(phaseName) == "string" then phaseName else ""
-		if PracticeRules.blockedByMatch(Players.LocalPlayer:GetAttribute("InMatch") == true, phase) then
+		if PracticeRules.blockedByMatch(Players.LocalPlayer:GetAttribute("InMatch") == true, phase, root:GetAttribute("ResultDismissed") == true) then
 			return
 		end
 		page = 1
@@ -247,7 +247,7 @@ function TutorialScreen.bind(root: Frame): () -> ()
 		local phaseName = if folder ~= nil then folder:GetAttribute("Phase") else nil
 		local phase = if type(phaseName) == "string" then phaseName else ""
 		local open = root:GetAttribute("TutorialOpen") == true
-		if open and PracticeRules.blockedByMatch(Players.LocalPlayer:GetAttribute("InMatch") == true, phase) then
+		if open and PracticeRules.blockedByMatch(Players.LocalPlayer:GetAttribute("InMatch") == true, phase, root:GetAttribute("ResultDismissed") == true) then
 			closeForMatch()
 			return
 		end

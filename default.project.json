@@ -5,6 +5,10 @@
     "$ignoreUnknownInstances": true,
     "ReplicatedStorage": {
       "$ignoreUnknownInstances": true,
+      "Pad": {
+        "$path": "src/ReplicatedStorage/Pad",
+        "$ignoreUnknownInstances": true
+      },
       "Shared": {
         "$path": "src/ReplicatedStorage/Shared"
       }

@@ -1,6 +1,7 @@
 --!strict
--- Left lobby HUD. The clock is the server phase end, not a local countdown.
+-- Lobby HUD. The clock is the server phase end, not a local countdown.
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -10,6 +11,7 @@ local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local Localization = require(ReplicatedStorage.Shared.Localization)
 local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
 
+local STATUS_FONT_SCALE = 2
 local CAPACITY = constants.Match.MaxParticipants
 
 local PHASE_KEYS: {[string]: string} = {
@@ -18,6 +20,7 @@ local PHASE_KEYS: {[string]: string} = {
 	Rest = "Lobby.PhaseRest",
 }
 
+local Layout = require(script.Parent.Layout)
 local LobbyHud = {}
 
 local function formatTime(seconds: number): string
@@ -34,87 +37,162 @@ function LobbyHud.bind(root: Frame): () -> ()
 	panel.Size = UDim2.fromScale(1, 1)
 	panel.Parent = root
 
-	local status = Instance.new("TextLabel")
+	local status = Instance.new("Frame")
 	status.Name = "MatchStatus"
-	status.AnchorPoint = Vector2.new(0.5, 0)
-	status.Font = Enum.Font.GothamBold
-	status.TextColor3 = UiChrome.Navy
-	status.TextScaled = true
-	status.TextWrapped = false
+	status.AnchorPoint = Vector2.new(1, 0.5)
 	status.Parent = panel
 	UiChrome.paint(status, "panel")
-	local statusFont = Instance.new("UITextSizeConstraint")
-	statusFont.MinTextSize = 9
-	statusFont.MaxTextSize = 18
-	statusFont.Parent = status
-	local function menuButton(name: string, role: string, iconKey: string | number): TextButton
+	local function statusLine(name: string, y: number, height: number, maxFont: number): TextLabel
+		local label = Instance.new("TextLabel")
+		label.Name = name
+		label.BackgroundTransparency = 1
+		label.Position = UDim2.new(0, 5, y, 2)
+		label.Size = UDim2.new(1, -10, height, -4)
+		label.Font = Enum.Font.GothamBold
+		label.TextColor3 = UiChrome.Navy
+		label.TextScaled = true
+		label.TextWrapped = false
+		label.Text = ""
+		local font = Instance.new("UITextSizeConstraint")
+		font.MinTextSize = 10 * STATUS_FONT_SCALE
+		font.MaxTextSize = maxFont * STATUS_FONT_SCALE
+		font.Parent = label
+		label.Parent = status
+		return label
+	end
+	local phaseLine = statusLine("Phase", 0, 0.33, 20)
+	phaseLine.BackgroundColor3 = UiChrome.Blue
+	phaseLine.BackgroundTransparency = 0
+	phaseLine.TextColor3 = UiChrome.White
+	UiChrome.round(phaseLine, 6)
+	local timeLine = statusLine("TimeLeft", 0.33, 0.38, 26)
+	local queueLine = statusLine("Waiting", 0.71, 0.29, 18)
+	queueLine.BackgroundColor3 = Color3.fromRGB(234, 241, 255)
+	queueLine.BackgroundTransparency = 0
+	queueLine.Font = Enum.Font.GothamMedium
+	UiChrome.round(queueLine, 5)
+
+	local function menuButton(name: string, role: string, iconKey: string | number): (TextButton, ImageLabel)
 		local button = Instance.new("TextButton")
 		button.Name = name
 		button.AutoButtonColor = false
-		button.Visible = false
+		button.Text = ""
+		button.Visible = true
 		button.Parent = panel
 		UiChrome.paint(button, role)
 		local mark = UiChrome.icon(button, iconKey)
-		mark.AnchorPoint = Vector2.new(0, 0.5)
-		mark.Position = UDim2.new(0, 6, 0.5, 0)
-		mark.Size = UDim2.fromOffset(18, 18)
-		button.Text = ""
-		local caption = Instance.new("TextLabel")
-		caption.Name = "Caption"
-		caption.Position = UDim2.fromOffset(if mark.Visible then 28 else 4, 0)
-		caption.Size = UDim2.new(1, if mark.Visible then -32 else -8, 1, 0)
-		caption.BackgroundTransparency = 1
-		caption.Font = Enum.Font.GothamMedium
-		caption.TextColor3 = UiChrome.Navy
-		caption.TextScaled = true
-		caption.Parent = button
-		local font = Instance.new("UITextSizeConstraint")
-		font.MaxTextSize = 17
-		font.Parent = caption
-		return button
+		mark.AnchorPoint = Vector2.new(0.5, 0.5)
+		mark.Position = UDim2.fromScale(0.5, 0.5)
+		return button, mark
 	end
-	local practiceButton = menuButton("Practice", "primary", "Practice")
-	local practiceHint = Instance.new("TextLabel")
-	practiceHint.Name = "PracticeHint"
-	practiceHint.TextWrapped = true
-	practiceHint.TextColor3 = UiChrome.Navy
-	practiceHint.Visible = false
-	practiceHint.Parent = panel
-	UiChrome.paint(practiceHint, "panel")
-	local shopButton = menuButton("Shop", "panel", "Shop")
-	local rankButton = menuButton("Rank", "panel", 10073)
-	local settingsButton = menuButton("Settings", "panel", 10063)
+	local practiceButton, practiceIcon = menuButton("Practice", "primary", "Practice")
+	local shopButton, shopIcon = menuButton("Shop", "panel", "Shop")
+	local rankButton, rankIcon = menuButton("Rank", "panel", 10073)
+	local actionButtons = { practiceButton, shopButton, rankButton }
+	local actionIcons = { practiceIcon, shopIcon, rankIcon }
+
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local existingTopbar = playerGui:FindFirstChild("KeyboardWarriorTopbar")
+	if existingTopbar ~= nil then
+		existingTopbar:Destroy()
+	end
+	local topbar = Instance.new("ScreenGui")
+	topbar.Name = "KeyboardWarriorTopbar"
+	topbar.ResetOnSpawn = false
+	topbar.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	topbar.DisplayOrder = 10
+	topbar.ScreenInsets = Enum.ScreenInsets.TopbarSafeInsets
+	topbar.Parent = playerGui
+	local settingsButton = Instance.new("TextButton")
+	settingsButton.Name = "Settings"
+	settingsButton.AnchorPoint = Vector2.new(0, 1)
+	settingsButton.AutoButtonColor = false
+	settingsButton.BackgroundColor3 = Color3.new(0, 0, 0)
+	settingsButton.BorderSizePixel = 0
+	settingsButton.Text = ""
+	settingsButton.ClipsDescendants = true
+	settingsButton.Visible = false
+	settingsButton.Parent = topbar
+	local settingsCorner = Instance.new("UICorner")
+	settingsCorner.CornerRadius = UDim.new(0.5, 0)
+	settingsCorner.Parent = settingsButton
+	-- Item 10063 is a blue gear with a white hole. A flat white tint fills that hole.
+	local settingsIcon = UiChrome.icon(settingsButton, 10063)
+	settingsIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	settingsIcon.Position = UDim2.fromScale(0.5, 0.5)
+	local function placeSettings()
+		local band = topbar.AbsoluteSize
+		if band.X < 1 or band.Y < 1 then
+			return
+		end
+		-- Roblox draws the menu icon at 44px on the bottom of the 58px top bar.
+		local row = GuiService.TopbarInset.Height
+		local diameter = if row >= 50 then 44 elseif row > 0 then math.floor(row) else math.min(44, band.Y)
+		diameter = math.min(diameter, band.X, band.Y)
+		if diameter < 1 then
+			return
+		end
+		settingsButton.AnchorPoint = Vector2.new(0, 1)
+		settingsButton.Position = UDim2.fromOffset(8, band.Y)
+		settingsButton.Size = UDim2.fromOffset(diameter, diameter)
+		local iconSide = math.max(1, math.floor(diameter * 0.72))
+		settingsIcon.Size = UDim2.fromOffset(iconSide, iconSide)
+	end
 
 	local function applyLayout()
 		local size = root.AbsoluteSize
 		if size.X < 1 or size.Y < 1 then return end
-		local compact = root:GetAttribute("Compact") == true
-		local row = if compact then constants.UI.CompactTouchTarget else constants.UI.TouchTarget
-		local width = if compact then 129 else 151
-		local gap = 4
-		local statusHeight = if compact then 26 else 34
-		status.Position = UDim2.new(0.5, 0, 0, 4)
-		status.Size = UDim2.fromOffset(math.min(size.X - 16, 620), statusHeight)
-		-- Reserve the lower left for Roblox touch movement, including on short phones.
-		local bottom = math.floor(size.Y * 0.62)
-		local top = statusHeight + 10
-		local columns = if bottom - top < row * 4 + gap * 3 then 2 else 1
-		local rows = 4 / columns
-		local menuHeight = rows * row + (rows - 1) * gap
-		local start = math.clamp(math.floor((size.Y - menuHeight) * 0.5), top, math.max(top, bottom - menuHeight))
-		for index, button in { practiceButton, shopButton, rankButton, settingsButton } do
-			button.Size = UDim2.fromOffset(width, row)
-			button.Position = UDim2.fromOffset(8 + ((index - 1) % columns) * (width + gap), start + math.floor((index - 1) / columns) * (row + gap))
+		local metrics = Layout.metrics(size)
+		local edge = metrics.margin
+		local statusHeight = math.min(if metrics.compact then 90 else 116, math.floor(size.Y * 0.36))
+		local statusWidth = math.clamp(math.round(size.X * 0.19), 138, 240)
+		status.Position = UDim2.new(1, -edge, 0.40, 0)
+		status.Size = UDim2.fromOffset(statusWidth, statusHeight)
+		local gap = math.max(4, math.round(statusWidth * 0.04))
+		local side = math.floor((statusWidth - gap * 2) / 3)
+		if side < 1 then
+			side = 1
 		end
-		practiceHint.Position = practiceButton.Position
-		practiceHint.Size = practiceButton.Size
-		practiceHint.TextSize = if compact then 12 else 15
+		local spare = statusWidth - (side * 3 + gap * 2)
+		if spare < 0 then
+			gap = math.max(1, math.floor((statusWidth - side * 3) / 2))
+			spare = statusWidth - (side * 3 + gap * 2)
+		end
+		local cardTop = size.Y * 0.40 - statusHeight / 2
+		local above = gap
+		local room = math.floor(cardTop - above)
+		local rowWidth = statusWidth
+		if side > room and room >= 1 then
+			local scale = room / side
+			side = math.max(1, math.floor(side * scale))
+			gap = math.max(1, math.floor(gap * scale))
+			spare = 0
+			rowWidth = side * 3 + gap * 2
+		end
+		local rowLeft = size.X - edge - rowWidth
+		local rowTop = math.max(0, cardTop - above - side)
+		local iconSide = math.max(1, math.floor(side * 0.6))
+		local step = side + gap
+		for index, button in actionButtons do
+			local shift = if index == #actionButtons then math.max(0, spare) else 0
+			button.Size = UDim2.fromOffset(side, side)
+			button.Position = UDim2.fromOffset(rowLeft + (index - 1) * step + shift, rowTop)
+			actionIcons[index].Size = UDim2.fromOffset(iconSide, iconSide)
+		end
+		placeSettings()
 	end
 	applyLayout()
 
-	local function setCaption(button: TextButton, text: string)
-		local caption = button:FindFirstChild("Caption") :: TextLabel
-		caption.Text = text
+	local function canPractice(): boolean
+		if Players.LocalPlayer:GetAttribute("InJoinZone") == true then
+			return false
+		end
+		if Players.LocalPlayer:GetAttribute("InMatch") ~= true then
+			return true
+		end
+		local folder = ReplicatedStorage:FindFirstChild("MatchState")
+		local phaseName = if folder ~= nil then folder:GetAttribute("Phase") else nil
+		return phaseName == "Result" and root:GetAttribute("ResultDismissed") == true
 	end
 
 	local function render()
@@ -130,9 +208,6 @@ function LobbyHud.bind(root: Frame): () -> ()
 		end
 		local time = Localization.getText("Lobby.TimeLeft", nil, { time = formatTime(remain) })
 
-		local waiting = Players.LocalPlayer:GetAttribute("InJoinZone") == true
-		local participation = Localization.getText(if waiting then "Lobby.Waiting" else "Lobby.NotWaiting")
-
 		local waitingCount = if folder ~= nil then folder:GetAttribute("WaitingCount") else 0
 		if type(waitingCount) ~= "number" then
 			waitingCount = 0
@@ -142,7 +217,9 @@ function LobbyHud.bind(root: Frame): () -> ()
 			capacity = CAPACITY,
 		})
 
-		status.Text = table.concat({ phase, time, participation, queue }, "   ·   ")
+		phaseLine.Text = phase
+		timeLine.Text = time
+		queueLine.Text = queue
 
 		local inMatch = Players.LocalPlayer:GetAttribute("InMatch") == true
 		local practicing = root:GetAttribute("PracticeOpen") == true
@@ -150,54 +227,33 @@ function LobbyHud.bind(root: Frame): () -> ()
 		local tutorialOpen = root:GetAttribute("TutorialOpen") == true
 		local rankOpen = root:GetAttribute("RankOpen") == true
 		local shopOpen = root:GetAttribute("ShopOpen") == true
-		local playing = inMatch and (phaseName == "Play" or phaseName == "Result")
+		local dismissed = phaseName == "Result" and root:GetAttribute("ResultDismissed") == true
+		local playing = inMatch and (phaseName == "Play" or (phaseName == "Result" and not dismissed))
 		panel.Visible = not practicing and not settingsOpen and not tutorialOpen and not rankOpen and not shopOpen and not playing
-		practiceButton.Visible = panel.Visible and not waiting and not inMatch
-		setCaption(practiceButton, Localization.getText("Practice.Start"))
-		practiceHint.Visible = panel.Visible and waiting and not inMatch
-		practiceHint.Text = Localization.getText("Practice.Outside")
+		local available = canPractice()
+		UiChrome.paint(practiceButton, if available then "primary" else "panel")
+		practiceButton.Active = available
+		practiceButton.Selectable = available
 		settingsButton.Visible = panel.Visible
-		setCaption(settingsButton, Localization.getText("Settings.Open"))
-		rankButton.Visible = panel.Visible
-		setCaption(rankButton, Localization.getText("Rank.Open"))
-		shopButton.Visible = panel.Visible
-		setCaption(shopButton, Localization.getText("Shop.Open"))
+	end
+	local function openMenu(attribute: string)
+		if panel.Visible then
+			root:SetAttribute(attribute, true)
+		end
 	end
 	shopButton.Activated:Connect(function()
-		if Players.LocalPlayer:GetAttribute("InMatch") == true then
-			local folder = ReplicatedStorage:FindFirstChild("MatchState")
-			local phaseName = if folder ~= nil then folder:GetAttribute("Phase") else nil
-			if phaseName == "Play" or phaseName == "Result" then
-				return
-			end
-		end
-		root:SetAttribute("ShopOpen", true)
+		openMenu("ShopOpen")
 	end)
 	rankButton.Activated:Connect(function()
-		if Players.LocalPlayer:GetAttribute("InMatch") == true then
-			local folder = ReplicatedStorage:FindFirstChild("MatchState")
-			local phaseName = if folder ~= nil then folder:GetAttribute("Phase") else nil
-			if phaseName == "Play" or phaseName == "Result" then
-				return
-			end
-		end
-		root:SetAttribute("RankOpen", true)
+		openMenu("RankOpen")
 	end)
 	settingsButton.Activated:Connect(function()
-		if Players.LocalPlayer:GetAttribute("InMatch") == true then
-			local folder = ReplicatedStorage:FindFirstChild("MatchState")
-			local phaseName = if folder ~= nil then folder:GetAttribute("Phase") else nil
-			if phaseName == "Play" or phaseName == "Result" then
-				return
-			end
-		end
-		root:SetAttribute("SettingsOpen", true)
+		openMenu("SettingsOpen")
 	end)
 	practiceButton.Activated:Connect(function()
-		if Players.LocalPlayer:GetAttribute("InJoinZone") == true or Players.LocalPlayer:GetAttribute("InMatch") == true then
-			return
+		if canPractice() then
+			openMenu("PracticeOpen")
 		end
-		root:SetAttribute("PracticeOpen", true)
 	end)
 	render()
 
@@ -208,8 +264,10 @@ function LobbyHud.bind(root: Frame): () -> ()
 		root:GetAttributeChangedSignal("TutorialOpen"):Connect(render),
 		root:GetAttributeChangedSignal("RankOpen"):Connect(render),
 		root:GetAttributeChangedSignal("ShopOpen"):Connect(render),
-		root:GetAttributeChangedSignal("TouchTarget"):Connect(applyLayout),
+		root:GetAttributeChangedSignal("ResultDismissed"):Connect(render),
 		root:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyLayout),
+		topbar:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeSettings),
+		GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(placeSettings),
 		RunService.Heartbeat:Connect(render),
 	}
 	local stopLocale = Localization.onChanged(render)
@@ -219,6 +277,7 @@ function LobbyHud.bind(root: Frame): () -> ()
 		end
 		stopLocale()
 		panel:Destroy()
+		topbar:Destroy()
 	end
 end
 

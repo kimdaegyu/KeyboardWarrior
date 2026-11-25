@@ -18,6 +18,13 @@ local RIM = {
 }
 local SPARK = Color3.fromRGB(90, 230, 255)
 
+function PadLook.forStack(paint: Paint): (Color3, Color3?, boolean)
+	local body = BODY[paint.body] or BODY.purple
+	local rim = RIM[paint.rim]
+	local effect = paint.effect ~= nil and paint.effect ~= "" and paint.effect ~= "none"
+	return body, rim, effect
+end
+
 function PadLook.starter(): Paint
 	return {
 		body = "purple",
@@ -36,7 +43,7 @@ end
 function PadLook.apply(pad: BasePart, paint: Paint)
 	local body = BODY[paint.body] or BODY.purple
 	pad.Color = body
-	pad.Material = Enum.Material.Neon
+	pad.Material = Enum.Material.Asphalt
 	clearNamed(pad, "PadRim")
 	clearNamed(pad, "PadEffect")
 	clearNamed(pad, "Spark")

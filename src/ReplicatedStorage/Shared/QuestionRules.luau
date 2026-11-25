@@ -1,6 +1,7 @@
 --!strict
 -- Shared question order and completion rules. No instances and no sample prompts.
 
+local HangulInput = if script then require(script.Parent.HangulInput) else require("./HangulInput")
 local PlaytestMetrics = if script
 	then require(script.Parent.PlaytestMetrics)
 	else require("./PlaytestMetrics")
@@ -40,6 +41,7 @@ export type Solver = {
 	index: number,
 	score: number,
 	wordCount: number,
+	strokes: number,
 	sentenceCount: number,
 	multiplier: number,
 	reachedAt: number,
@@ -400,6 +402,7 @@ function QuestionRules.begin(deck: {Prompt}, matchId: number, endsAt: number, us
 			index = 1,
 			score = 0,
 			wordCount = 0,
+			strokes = 0,
 			sentenceCount = 0,
 			multiplier = multiplier,
 			reachedAt = startedAt,
@@ -675,6 +678,7 @@ function QuestionRules.submit(round: Round?, userId: number, matchId: number, is
 	local completedIssue = solver.issue
 	local issuedMultiplier = solver.multiplier
 	if solver.scoredIssue ~= completedIssue then
+		solver.strokes += HangulInput.strokes(answer)
 		solver.score += prompt.score * issuedMultiplier
 		solver.reachedAt = now
 		solver.scoredIssue = completedIssue
@@ -909,6 +913,8 @@ function QuestionRules.selfCheck(rows: {SheetRow}, grades: {GradeRow}?)
 	local scoreConfig: ScoreConfig = { doubleSeconds = 30, multiplier = 2 }
 	local normal = QuestionRules.begin(deck, 15, 500, { 4 }, 0, scoreConfig)
 	local total = 0
+	assert(HangulInput.strokes("ab cd") == 5 and HangulInput.strokes("과 값") == 8, "CPM counts spaces and Dubeolsik compound strokes")
+	local expectedStrokes = 0
 	local steps = math.min(3, #deck)
 	for step = 1, steps do
 		local current = QuestionRules.current(normal, 4, 10)
@@ -918,6 +924,8 @@ function QuestionRules.selfCheck(rows: {SheetRow}, grades: {GradeRow}?)
 		assert(scored.awarded == true and scored.total == total, "first completion adds the issued prompt")
 		local replay = QuestionRules.submit(normal, 4, 15, step, current.text :: string, 10)
 		assert(replay.awarded == false and replay.total == total, "a repeated submit does not score again")
+		expectedStrokes += HangulInput.strokes(current.text :: string)
+		assert(normal.solvers[4].strokes == expectedStrokes, "a replay never adds typing strokes")
 	end
 	if steps >= 3 and deck[1].score == 10 and deck[2].score == 10 and deck[3].score == 25 then
 		assert(total == 45, "sample questions accumulate 10, 20, 45")
