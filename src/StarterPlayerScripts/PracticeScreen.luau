@@ -198,10 +198,7 @@ function PracticeScreen.bind(root: Frame): () -> ()
 		if echo ~= "" and text == echo then
 			local prompt = PracticeRules.prompt(current, words, sentences)
 			local completing = prompt ~= nil
-				and prompt.text == echo
-				and current.buffer ~= ""
-				and current.buffer ~= echo
-				and string.sub(echo, 1, #current.buffer) == current.buffer
+				and QuestionRules.continuesAnswer(current.buffer, echo, prompt.text)
 			if not completing then
 				pad:setText(current.buffer)
 				return

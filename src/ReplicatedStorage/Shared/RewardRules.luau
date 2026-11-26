@@ -1,6 +1,8 @@
 --!strict
 -- Reward, level, and grant rules. Rates come from the sheets passed in, not from literals.
 
+local TitleRules = if script then require(script.Parent.TitleRules) else require("./TitleRules")
+
 export type RewardRow = {
 	Id: string,
 	Gold: string,
@@ -45,6 +47,11 @@ export type Profile = {
 	effect: string?,
 	bgmVolume: number?,
 	sfxVolume: number?,
+	titles: {number}?,
+	titleMode: string?,
+	equippedTitle: number?,
+	titleGrantId: string?,
+	titleGrantIds: {number}?,
 }
 
 export type RankRow = {
@@ -99,12 +106,16 @@ function RewardRules.levelsFromRows(rows: {LevelRow}): {LevelStep}
 	return steps
 end
 
-function RewardRules.reward(rates: Rates, words: number, sentences: number, finished: boolean): (number, number)
+function RewardRules.reward(rates: Rates, words: number, sentences: number, finished: boolean, friendPercent: number?): (number, number)
 	local gold = words * rates.wordGold + sentences * rates.sentenceGold
 	local exp = words * rates.wordExp + sentences * rates.sentenceExp
 	if finished and words + sentences >= 1 then
 		gold += rates.completeGold
 		exp += rates.completeExp
+	end
+	if finished and friendPercent and friendPercent > 0 then
+		gold += math.round(gold * friendPercent / 100)
+		exp += math.round(exp * friendPercent / 100)
 	end
 	return gold, exp
 end
@@ -140,12 +151,12 @@ function RewardRules.profileAfterOpen(success: boolean, data: Profile?): Profile
 	return data
 end
 
-function RewardRules.applyGrant(profile: Profile, settlementId: string, gold: number, exp: number, score: number, finished: boolean, cpm: number?, language: string?): (Profile, boolean)
+function RewardRules.applyGrant(profile: Profile, settlementId: string, gold: number, exp: number, score: number, finished: boolean, cpm: number?, language: string?, achievements: {TitleRules.Achievement}?): (Profile, boolean, {number}?)
 	local grants: {string} = {}
 	if type(profile.grants) == "table" then
 		for _, id in profile.grants do
 			if id == settlementId then
-				return profile, false
+				return profile, false, TitleRules.storedGrant(profile, settlementId)
 			end
 			table.insert(grants, id)
 		end
@@ -217,7 +228,13 @@ function RewardRules.applyGrant(profile: Profile, settlementId: string, gold: nu
 	if type(profile.effect) == "string" then
 		updated.effect = profile.effect
 	end
-	return updated, true
+	TitleRules.copyInto(updated, profile)
+	local fresh: {number} = {}
+	if achievements ~= nil then
+		fresh = TitleRules.applyScore(updated, score, finished, achievements)
+	end
+	TitleRules.rememberGrant(updated, settlementId, fresh)
+	return updated, true, fresh
 end
 
 function RewardRules.selfCheck(rewardRows: {RewardRow}, levelRows: {LevelRow})
@@ -234,6 +251,8 @@ function RewardRules.selfCheck(rewardRows: {RewardRow}, levelRows: {LevelRow})
 		assert(gold == 56 and exp == 10, "sample sheet pays 56 gold and 10 exp")
 	end
 
+	local friendGold, friendExp = RewardRules.reward(rates, 2, 1, true, 30)
+	assert(friendGold == gold + math.round(gold * 0.3) and friendExp == exp + math.round(exp * 0.3), "friend boost rounds the final rewards once")
 	local zeroGold, zeroExp = RewardRules.reward(rates, 0, 0, true)
 	assert(zeroGold == 0 and zeroExp == 0, "a finished player with no answers is unpaid")
 	local leaveGold, leaveExp = RewardRules.reward(rates, 1, 0, false)
@@ -307,6 +326,32 @@ function RewardRules.selfCheck(rewardRows: {RewardRow}, levelRows: {LevelRow})
 	assert(shown[1].userId == 9 and shown[2].rank == 2, "the result keeps the sealed order")
 	assert(RewardRules.settlementId("server-a", 1, "n") ~= RewardRules.settlementId("server-b", 1, "n"), "local match numbers collide across servers")
 	assert(RewardRules.settlementId("server-a", 1, "n") ~= "1", "a local match number is not a settlement id")
+	local titles: {TitleRules.Achievement} = {
+		{ id = 1, titleKey = "Achievement.Title1", score = 200, shopId = "rim_title_01", badgeId = "", itemId = 10080 },
+		{ id = 2, titleKey = "Achievement.Title2", score = 500, shopId = "rim_title_02", badgeId = "", itemId = 10081 },
+		{ id = 3, titleKey = "Achievement.Title3", score = 700, shopId = "rim_title_03", badgeId = "", itemId = 10082 },
+		{ id = 4, titleKey = "Achievement.Title4", score = 900, shopId = "rim_title_04", badgeId = "", itemId = 10083 },
+	}
+	local climber: Profile = { schemaVersion = 1, gold = 4, exp = 9, bestScore = 0, rim = "starter_rim" }
+	local unlocked, didUnlock, ids = RewardRules.applyGrant(climber, "title:720", 0, 0, 720, true, nil, nil, titles)
+	assert(didUnlock and ids ~= nil and #ids == 3 and unlocked.equippedTitle == 3 and unlocked.rim == "starter_rim", "720 equips the third title without changing the worn rim")
+	local replay, replayed, replayIds = RewardRules.applyGrant(unlocked, "title:720", 0, 0, 720, true, nil, nil, titles)
+	assert(not replayed and replayIds ~= nil and #replayIds == 3 and replay.gold == unlocked.gold and #replay.titles == 3, "a settlement retry keeps the new titles and does not pay them again")
+	local manual: Profile = {
+		schemaVersion = 1,
+		gold = unlocked.gold,
+		exp = unlocked.exp,
+		bestScore = unlocked.bestScore,
+		titles = unlocked.titles,
+		titleMode = "manual",
+		equippedTitle = 1,
+		owned = unlocked.owned,
+		rim = "starter_rim",
+	}
+	local later, laterApplied, laterIds = RewardRules.applyGrant(manual, "title:900", 0, 0, 900, true, nil, nil, titles)
+	assert(laterApplied and laterIds ~= nil and laterIds[1] == 4 and later.equippedTitle == 1 and later.titleMode == "manual", "a manual equip survives a higher score")
+	local leftTitles, leftApplied, leftIds = RewardRules.applyGrant(climber, "title:leave", 0, 0, 1500, false, nil, nil, titles)
+	assert(leftApplied and leftIds ~= nil and #leftIds == 0 and leftTitles.titles == nil, "leaving does not unlock a title")
 	assert(RewardRules.profileAfterOpen(false, nil) == nil, "a failed open does not invent a profile")
 	local kept = RewardRules.profileAfterOpen(true, before)
 	assert(kept ~= nil and kept.gold == 0 and kept.exp == 90 and kept.bestScore == 20, "an opened profile keeps its balances")

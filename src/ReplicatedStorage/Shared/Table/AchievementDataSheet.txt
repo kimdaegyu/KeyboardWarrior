@@ -1,0 +1,11 @@
+Id,TitleKey,Score,ShopId,RobloxBadgeId,itemId
+1,Achievement.Title1,200,rim_title_01,,10080
+2,Achievement.Title2,500,rim_title_02,,10081
+3,Achievement.Title3,700,rim_title_03,,10082
+4,Achievement.Title4,900,rim_title_04,,10083
+5,Achievement.Title5,1000,rim_title_05,,10084
+6,Achievement.Title6,1100,rim_title_06,,10085
+7,Achievement.Title7,1200,rim_title_07,,10086
+8,Achievement.Title8,1300,rim_title_08,,10087
+9,Achievement.Title9,1400,rim_title_09,,10088
+10,Achievement.Title10,1500,rim_title_10,,10089

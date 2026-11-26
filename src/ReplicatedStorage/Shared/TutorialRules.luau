@@ -1,6 +1,8 @@
 --!strict
 -- Tutorial pages come from TutorialDataSheet. Disabled pages stay in the sheet and out of the count.
 
+local TitleRules = if script then require(script.Parent.TitleRules) else require("./TitleRules")
+
 export type Profile = {
 	schemaVersion: number,
 	gold: number,
@@ -20,6 +22,11 @@ export type Profile = {
 	effect: string?,
 	bgmVolume: number?,
 	sfxVolume: number?,
+	titles: {number}?,
+	titleMode: string?,
+	equippedTitle: number?,
+	titleGrantId: string?,
+	titleGrantIds: {number}?,
 }
 
 export type Row = {
@@ -161,6 +168,7 @@ function TutorialRules.acknowledge(profile: Profile): Profile
 	if type(profile.effect) == "string" then
 		updated.effect = profile.effect
 	end
+	TitleRules.copyInto(updated, profile)
 	return updated
 end
 

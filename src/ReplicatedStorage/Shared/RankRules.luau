@@ -40,6 +40,10 @@ function RankRules.storedValue(previous: any, score: number): number?
 	return score
 end
 
+function RankRules.shouldPublish(score: number, confirmed: number?, cutoff: number?): boolean
+	return (confirmed == nil or score > confirmed) and (cutoff == nil or score >= cutoff)
+end
+
 function RankRules.place(entries: {Entry}): {Placed}
 	local placed: {Placed} = {}
 	local rank = 1
@@ -60,6 +64,10 @@ function RankRules.place(entries: {Entry}): {Placed}
 end
 
 function RankRules.selfCheck()
+	assert(RankRules.shouldPublish(0, nil, nil), "a first finished zero is published")
+	assert(not RankRules.shouldPublish(100, 100, nil), "an acknowledged score is skipped")
+	assert(not RankRules.shouldPublish(99, nil, 100), "a below-cut score is local only")
+	assert(RankRules.shouldPublish(100, 99, 100), "publish ties at the cutoff")
 	local best = 0
 	local ranked = false
 	local function finish(score: number, finished: boolean)

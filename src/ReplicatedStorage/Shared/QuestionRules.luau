@@ -258,6 +258,13 @@ function QuestionRules.fieldAnswer(text: string, cursor: number, content: string
 	return string.sub(rendered, 1, cursor - 1) .. string.sub(rendered, cursor)
 end
 
+-- A previous answer can also be a prefix typed deliberately on the next prompt.
+function QuestionRules.continuesAnswer(buffer: string, previous: string, prompt: string): boolean
+	return buffer ~= "" and #buffer < #previous
+		and string.sub(previous, 1, #buffer) == buffer
+		and string.sub(prompt, 1, #previous) == previous
+end
+
 function QuestionRules.revives(text: string, accepted: string): boolean
 	if accepted == "" or text == "" then
 		return false
@@ -770,6 +777,11 @@ function QuestionRules.acceptEnter(locked: boolean, buffer: string): boolean
 end
 
 function QuestionRules.selfCheck(rows: {SheetRow}, grades: {GradeRow}?)
+	assert(QuestionRules.continuesAnswer("bal", "ball", "balloon"), "ball after bal is valid progress on balloon")
+	assert(QuestionRules.continuesAnswer("bal", "ball", "ball"), "consecutive identical prompts can be completed")
+	assert(not QuestionRules.continuesAnswer("", "ball", "balloon"), "ignore stale answer on a fresh field")
+	assert(not QuestionRules.continuesAnswer("bal", "ball", "banana"), "ignore stale answer on an unrelated prompt")
+
 	assert(QuestionRules.clientMatchId("Play", true, 4) == 4)
 	assert(QuestionRules.clientMatchId("Result", true, 4) == 0, "result closes the typing screen")
 	assert(QuestionRules.clientMatchId("Play", false, 4) == 0, "lobby players stay on the lobby HUD")

@@ -1,5 +1,8 @@
 --!strict
 -- Gold shop. Defaults are owned by every profile. Studio rows sell only in Studio.
+-- Achievement rims are granted by a title and are not sold.
+
+local TitleRules = if script then require(script.Parent.TitleRules) else require("./TitleRules")
 
 export type Row = {
 	Id: string,
@@ -9,7 +12,7 @@ export type Row = {
 	PlatformProductId: string,
 	Enabled: string,
 	Release: string,
-	Style: string,
+	Color: string,
 }
 
 export type Item = {
@@ -20,7 +23,7 @@ export type Item = {
 	platformProductId: string,
 	enabled: boolean,
 	release: string,
-	style: string,
+	color: string,
 }
 
 export type Profile = {
@@ -42,6 +45,11 @@ export type Profile = {
 	effect: string?,
 	bgmVolume: number?,
 	sfxVolume: number?,
+	titles: {number}?,
+	titleMode: string?,
+	equippedTitle: number?,
+	titleGrantId: string?,
+	titleGrantIds: {number}?,
 }
 
 export type Loadout = {
@@ -58,11 +66,24 @@ export type Paint = {
 
 local ShopRules = {}
 
-local STYLE = {
-	Body = { purple = true, cyan = true },
-	Rim = { none = true, gold = true },
-	Effect = { none = true, spark = true },
+local HIDDEN = {
+	starter_rim = true,
+	starter_effect = true,
 }
+
+local function colorText(value: string): string?
+	local red, green, blue = string.match(value, "^(%d+);(%d+);(%d+)$")
+	if red == nil or green == nil or blue == nil then
+		return nil
+	end
+	for _, channel in { red, green, blue } do
+		local number = tonumber(channel)
+		if number == nil or number > 255 then
+			return nil
+		end
+	end
+	return value
+end
 
 local function flag(value: string): boolean?
 	if value == "1" then
@@ -128,6 +149,7 @@ local function copyProfile(profile: Profile): Profile
 	if type(profile.effect) == "string" then
 		updated.effect = profile.effect
 	end
+	TitleRules.copyInto(updated, profile)
 	return updated
 end
 
@@ -143,11 +165,17 @@ function ShopRules.catalog(rows: {Row}): ({Item}?, string)
 			return nil, "duplicate"
 		end
 		seen[row.Id] = true
-		local styles = STYLE[row.Category]
-		if styles == nil or styles[row.Style] ~= true then
-			return nil, "style"
+		if row.Category ~= "Body" and row.Category ~= "Rim" and row.Category ~= "Effect" then
+			return nil, "category"
 		end
-		if row.Currency ~= "Gold" and row.Currency ~= "Robux" then
+		local color = colorText(row.Color)
+		if color == nil then
+			return nil, "color"
+		end
+		if row.Currency ~= "Gold" and row.Currency ~= "Robux" and row.Currency ~= "Achievement" then
+			return nil, "currency"
+		end
+		if row.Currency == "Achievement" and row.Category ~= "Rim" then
 			return nil, "currency"
 		end
 		local enabled = flag(row.Enabled)
@@ -164,6 +192,9 @@ function ShopRules.catalog(rows: {Row}): ({Item}?, string)
 		if row.Release == "Default" and price ~= 0 then
 			return nil, "price"
 		end
+		if row.Currency == "Achievement" and price ~= 0 then
+			return nil, "price"
+		end
 		if row.Release ~= "Default" and row.Currency == "Gold" and enabled and price <= 0 then
 			return nil, "price"
 		end
@@ -178,7 +209,7 @@ function ShopRules.catalog(rows: {Row}): ({Item}?, string)
 			platformProductId = row.PlatformProductId,
 			enabled = enabled,
 			release = row.Release,
-			style = row.Style,
+			color = color,
 		})
 	end
 	for _, category in { "Body", "Rim", "Effect" } do
@@ -267,17 +298,17 @@ function ShopRules.loadout(items: {Item}, profile: Profile?): Loadout
 end
 
 function ShopRules.preview(items: {Item}, bodyId: string, rimId: string, effectId: string): Paint
-	local function style(id: string, category: string, plain: string): string
+	local function token(id: string, category: string, plain: string): string
 		local item = ShopRules.find(items, id)
-		if item ~= nil and item.category == category and item.enabled then
-			return item.style
+		if item == nil or item.category ~= category or not item.enabled or HIDDEN[item.id] then
+			return plain
 		end
-		return plain
+		return item.color
 	end
 	return {
-		body = style(bodyId, "Body", "purple"),
-		rim = style(rimId, "Rim", "none"),
-		effect = style(effectId, "Effect", "none"),
+		body = token(bodyId, "Body", "126;84;255"),
+		rim = token(rimId, "Rim", "none"),
+		effect = token(effectId, "Effect", "none"),
 	}
 end
 
@@ -287,7 +318,7 @@ function ShopRules.paint(items: {Item}, profile: Profile?): Paint
 end
 
 function ShopRules.purchase(profile: Profile, item: Item?, inStudio: boolean): (Profile, string)
-	if item == nil or not ShopRules.forSale(item, inStudio) then
+	if item == nil or item.currency == "Achievement" or not ShopRules.forSale(item, inStudio) then
 		return profile, "closed"
 	end
 	if ShopRules.owns(profile, item) then
@@ -328,25 +359,25 @@ function ShopRules.equip(profile: Profile, item: Item?): (Profile, string)
 end
 
 function ShopRules.selfCheck()
-	local function row(id: string, category: string, price: string, release: string, style: string): Row
+	local function row(id: string, category: string, price: string, release: string, color: string, currency: string?): Row
 		return {
 			Id = id,
 			Category = category,
-			Currency = "Gold",
+			Currency = if currency ~= nil then currency else "Gold",
 			Price = price,
 			PlatformProductId = "",
 			Enabled = "1",
 			Release = release,
-			Style = style,
+			Color = color,
 		}
 	end
 	local items, reason = ShopRules.catalog({
-		row("starter_body", "Body", "0", "Default", "purple"),
-		row("starter_rim", "Rim", "0", "Default", "none"),
-		row("starter_effect", "Effect", "0", "Default", "none"),
-		row("pilot_body", "Body", "20", "Studio", "cyan"),
-		row("pilot_rim", "Rim", "30", "Studio", "gold"),
-		row("pilot_effect", "Effect", "40", "Studio", "spark"),
+		row("starter_body", "Body", "0", "Default", "126;84;255"),
+		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
+		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
+		row("pilot_body", "Body", "20", "Studio", "70;220;255"),
+		row("pilot_rim", "Rim", "30", "Studio", "255;196;64"),
+		row("pilot_effect", "Effect", "40", "Studio", "90;230;255"),
 	})
 	assert(reason == "ok" and items ~= nil, "the shop sheet loads")
 	local catalog = items :: {Item}
@@ -375,8 +406,33 @@ function ShopRules.selfCheck()
 	assert(saved.body == "pilot_body" and saved.rim == "starter_rim", "a saved body stays equipped")
 	local preview = ShopRules.preview(catalog, "pilot_body", "pilot_rim", "starter_effect")
 	local bodyOnly = ShopRules.preview(catalog, "pilot_body", "starter_rim", "starter_effect")
-	assert(preview.body == "cyan" and preview.rim == "gold" and bodyOnly.body == "cyan" and bodyOnly.rim == "none", "a preview changes one slot and keeps the others")
-	assert(ShopRules.paint(catalog, nil).body == "purple" and ShopRules.paint(catalog, worn).body == "cyan", "the match uses the saved body")
+	assert(preview.body == "70;220;255" and preview.rim == "255;196;64" and bodyOnly.body == "70;220;255" and bodyOnly.rim == "none", "a preview changes one slot and keeps the others")
+	assert(ShopRules.paint(catalog, nil).body == "126;84;255" and ShopRules.paint(catalog, worn).body == "70;220;255", "the match uses the saved body")
+	local extra, extraReason = ShopRules.catalog({
+		row("starter_body", "Body", "0", "Default", "126;84;255"),
+		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
+		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
+		row("body_coral", "Body", "100", "Live", "248;105;100"),
+		row("rim_title_01", "Rim", "0", "Live", "233;126;107", "Achievement"),
+		row("ink_rim", "Rim", "15", "Studio", "0;0;0"),
+	})
+	assert(extraReason == "ok" and extra ~= nil, "live colors and achievement rims load")
+	local live = extra :: {Item}
+	local coral = ShopRules.find(live, "body_coral") :: Item
+	local titleRim = ShopRules.find(live, "rim_title_01") :: Item
+	local rich: Profile = { schemaVersion = 1, gold = 100, exp = 0, bestScore = 0 }
+	local boughtLive, liveReason = ShopRules.purchase(rich, coral, false)
+	assert(liveReason == "bought" and boughtLive.gold == 0, "a live gold pad sells outside Studio")
+	local blocked, blockedReason = ShopRules.purchase(fresh, titleRim, true)
+	assert(blockedReason == "closed" and blocked.gold == 51, "an achievement rim cannot be bought")
+	local colors = ShopRules.preview(live, "starter_body", "ink_rim", "starter_effect")
+	assert(colors.rim == "0;0;0" and ShopRules.preview(live, "starter_body", "starter_rim", "starter_effect").rim == "none", "only the starter rim stays hidden")
+	local badColor = ShopRules.catalog({
+		row("starter_body", "Body", "0", "Default", "256;0;0"),
+		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
+		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
+	})
+	assert(badColor == nil, "a color channel above 255 is rejected")
 end
 
 return ShopRules

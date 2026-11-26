@@ -69,14 +69,14 @@ end
 
 local function readPaint(payload: {[string]: any}): Paint
 	return {
-		body = if type(payload.body) == "string" then payload.body else "purple",
+		body = if type(payload.body) == "string" then payload.body else "126;84;255",
 		rim = if type(payload.rim) == "string" then payload.rim else "none",
 		effect = if type(payload.effect) == "string" then payload.effect else "none",
 	}
 end
 
 local function applyLook(body: BasePart, rim: BasePart?, paint: Paint)
-	local bodyColor, rimColor, effectOn = PadLook.forStack(paint)
+	local bodyColor, rimColor, effectOn, effectColor = PadLook.forStack(paint)
 	body.Color = bodyColor
 	if rim == nil then
 		return
@@ -87,6 +87,9 @@ local function applyLook(body: BasePart, rim: BasePart?, paint: Paint)
 	local emitter = rim:FindFirstChild("ParticleEmitter")
 	if emitter ~= nil and emitter:IsA("ParticleEmitter") then
 		emitter.Enabled = effectOn
+		if effectColor ~= nil then
+			emitter.Color = ColorSequence.new(effectColor)
+		end
 	end
 end
 

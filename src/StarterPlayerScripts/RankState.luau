@@ -18,6 +18,8 @@ local status = "loading"
 local rows: {Row} = {}
 local recorded = false
 local bestScore: number? = nil
+local personalRank: number? = nil
+local outside = false
 local received = false
 local bestScoreLanguage: string? = nil
 local bestScoreCpm: number? = nil
@@ -45,6 +47,10 @@ end
 
 function RankState.bestScore(): number?
 	return bestScore
+end
+
+function RankState.position(): (number?, boolean)
+	return personalRank, outside
 end
 
 function RankState.received(): boolean
@@ -101,6 +107,8 @@ local function onState(message: any)
 	status = message.status
 	rows = nextRows
 	recorded = message.recorded == true
+	personalRank = if type(message.personalRank) == "number" then message.personalRank else nil
+	outside = message.outside == true
 	bestScoreLanguage = if recorded and type(message.bestScoreLanguage) == "string" then message.bestScoreLanguage else nil
 	bestScoreCpm = if recorded and type(message.bestScoreCpm) == "number" then message.bestScoreCpm else nil
 	bestScore = if recorded and type(message.bestScore) == "number" then message.bestScore else nil

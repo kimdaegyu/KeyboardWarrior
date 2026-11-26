@@ -7,12 +7,14 @@ local RunService = game:GetService("RunService")
 local RewardRules = require(ReplicatedStorage.Shared.RewardRules)
 local ShopRules = require(ReplicatedStorage.Shared.ShopRules)
 local TableData = require(ReplicatedStorage.Shared.TableData)
+local TitleRules = require(ReplicatedStorage.Shared.TitleRules)
 local ProfileService = require(script.Parent.ProfileService)
 
 local ShopService = {}
 
 local started = false
 local catalog: {ShopRules.Item}? = nil
+local titleRows: {TitleRules.Achievement}? = nil
 local levels: {RewardRules.LevelStep}? = nil
 local stateEvent: RemoteEvent? = nil
 
@@ -53,12 +55,26 @@ function ShopService.paintFor(userId: number): ShopRules.Paint
 	return ShopRules.paint(list, ProfileService.read(userId) :: any)
 end
 
+local function achievements(): {TitleRules.Achievement}
+	local current = titleRows
+	if current ~= nil then
+		return current
+	end
+	local loaded = TitleRules.catalog(TableData.rows("AchievementDataSheet") :: {TitleRules.Row})
+	titleRows = loaded or {}
+	return titleRows
+end
+
 local function payload(userId: number, reason: string)
 	local list = items()
 	local profile = ProfileService.read(userId)
 	local inStudio = RunService:IsStudio()
 	local worn = ShopRules.loadout(list, profile :: any)
 	local owned: {string} = {}
+	local scoreFor: {[string]: number} = {}
+	for _, achievement in achievements() do
+		scoreFor[achievement.shopId] = achievement.score
+	end
 	local rows = {}
 	for _, item in list do
 		if ShopRules.listed(item, inStudio) then
@@ -71,7 +87,9 @@ local function payload(userId: number, reason: string)
 				category = item.category,
 				price = item.price,
 				release = item.release,
-				style = item.style,
+				color = item.color,
+				currency = item.currency,
+				score = scoreFor[item.id],
 				owned = has,
 			})
 		end
@@ -122,6 +140,10 @@ local function mutate(player: Player, action: string, itemId: string)
 		end
 	end
 	push(player, reason)
+end
+
+function ShopService.notify(player: Player)
+	push(player, "ok")
 end
 
 function ShopService.start()

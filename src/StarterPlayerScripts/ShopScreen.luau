@@ -10,10 +10,13 @@ local PadLook = require(ReplicatedStorage.Shared.PadLook)
 local PracticeRules = require(ReplicatedStorage.Shared.PracticeRules)
 local ShopLayout = require(ReplicatedStorage.Shared.ShopLayout)
 local ShopRules = require(ReplicatedStorage.Shared.ShopRules)
+local TableData = require(ReplicatedStorage.Shared.TableData)
+local TitleRules = require(ReplicatedStorage.Shared.TitleRules)
 local ItemIconUtil = require(ReplicatedStorage.Shared.ItemIconUtil)
 local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
 local UIImageUtil = require(ReplicatedStorage.Shared.UIImageUtil)
 local ShopState = require(script.Parent.ShopState)
+local TitleState = require(script.Parent.TitleState)
 
 local Layout = require(script.Parent.Layout)
 local ShopScreen = {}
@@ -145,7 +148,29 @@ function ShopScreen.bind(root: Frame): () -> ()
 	end
 
 	local buyButton = actionButton("Buy")
+	local titleButton = actionButton("Titles")
 	local closeButton = UiChrome.closeButton(card)
+	local titlePanel = Instance.new("Frame")
+	titlePanel.Name = "Titles"
+	titlePanel.BackgroundColor3 = UiChrome.White
+	titlePanel.BorderSizePixel = 0
+	titlePanel.Visible = false
+	titlePanel.ZIndex = 7
+	titlePanel.Parent = card
+	local titleList = Instance.new("ScrollingFrame")
+	titleList.Name = "TitleList"
+	titleList.BackgroundTransparency = 1
+	titleList.BorderSizePixel = 0
+	titleList.ScrollBarThickness = 6
+	titleList.CanvasSize = UDim2.fromOffset(0, 0)
+	titleList.ZIndex = 8
+	titleList.Parent = titlePanel
+	local autoButton = actionButton("Auto")
+	autoButton.Parent = titlePanel
+	autoButton.ZIndex = 8
+	local titleCards: {TextButton} = {}
+	local titlesOpen = false
+	local loadedTitles = TitleRules.catalog(TableData.rows("AchievementDataSheet") :: {TitleRules.Row}) or {}
 	local previewArt = Instance.new("ImageLabel")
 	previewArt.Name = "ProductArt"
 	previewArt.BackgroundTransparency = 1
@@ -197,12 +222,12 @@ function ShopScreen.bind(root: Frame): () -> ()
 			table.insert(rows, {
 				id = item.id,
 				category = item.category,
-				currency = "Gold",
+				currency = item.currency,
 				price = item.price,
 				platformProductId = "",
 				enabled = true,
 				release = item.release,
-				style = item.style,
+				color = item.color,
 			})
 		end
 		return rows
@@ -276,7 +301,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 		UiChrome.paint(card, "panel")
 		local y = plan.margin
 		titleLabel.Position = UDim2.fromOffset(plan.margin, y)
-		titleLabel.Size = UDim2.fromOffset(inner, plan.title)
+		titleLabel.Size = UDim2.fromOffset(math.max(0, inner - 120), plan.title)
 		titleLabel.TextSize = math.clamp(plan.title - 2, 14, 28)
 		y += plan.title + plan.gap
 		local goldShift = if goldIcon.Visible then plan.gold + 4 else 0
@@ -318,6 +343,22 @@ function ShopScreen.bind(root: Frame): () -> ()
 		buyButton.Size = UDim2.fromOffset(inner, plan.action)
 		closeButton.Position = UDim2.fromOffset(size.X - plan.margin, plan.margin)
 		closeButton.Size = UDim2.fromOffset(closeSize, closeSize)
+		local titleWidth = math.min(108, math.max(64, closeSize * 2))
+		titleButton.Position = UDim2.fromOffset(size.X - plan.margin - closeSize - 6 - titleWidth, plan.margin)
+		titleButton.Size = UDim2.fromOffset(titleWidth, closeSize)
+		titleButton.TextSize = math.clamp(closeSize - 16, 11, 16)
+		titleButton.Text = Localization.getText("Shop.Titles")
+		UiChrome.paint(titleButton, if titlesOpen then "selected" else "panel")
+		titleButton.TextColor3 = UiChrome.ink(if titlesOpen then "selected" else "panel")
+		titlePanel.Position = list.Position
+		titlePanel.Size = UDim2.fromOffset(plan.list + plan.gap + plan.preview, plan.body)
+		titleList.Size = UDim2.new(1, 0, 1, -plan.action - 4)
+		autoButton.Position = UDim2.new(0, 0, 1, -plan.action)
+		autoButton.Size = UDim2.new(1, 0, 0, plan.action)
+		autoButton.TextSize = math.clamp(plan.action - 16, 12, 18)
+		autoButton.Text = Localization.getText("Title.Auto")
+		UiChrome.paint(autoButton, if TitleState.mode() == "auto" then "selected" else "primary")
+		autoButton.TextColor3 = UiChrome.ink(if TitleState.mode() == "auto" then "selected" else "primary")
 		buyButton.TextSize = math.clamp(plan.action - 16, 12, 18)
 		closeButton.TextSize = math.round(closeSize * 0.55)
 		local buyFace = buyButton:GetAttribute("Face")
@@ -416,6 +457,11 @@ function ShopScreen.bind(root: Frame): () -> ()
 			buyButton.Active = false
 			buyButton.AutoButtonColor = false
 			buyButton:SetAttribute("Face", "selected")
+		elseif item.currency == "Achievement" and not item.owned then
+			buyButton.Text = Localization.getText("Shop.NeedScore", nil, { score = tostring(item.score or 0) })
+			buyButton.Active = false
+			buyButton.AutoButtonColor = false
+			buyButton:SetAttribute("Face", "panel")
 		elseif item.owned then
 			buyButton.Text = Localization.getText("Shop.Equip")
 			buyButton:SetAttribute("Face", "primary")
@@ -434,6 +480,54 @@ function ShopScreen.bind(root: Frame): () -> ()
 			previewArt.Visible = false
 		end
 		PadLook.apply(pad, ShopRules.preview(catalog(), draft.body, draft.rim, draft.effect))
+		titlePanel.Visible = titlesOpen
+		list.Visible = not titlesOpen
+		preview.Visible = not titlesOpen
+		local ownedTitles = TitleState.titles()
+		for index = 1, math.max(#ownedTitles, #titleCards) do
+			local titleId = ownedTitles[index]
+			local button = titleCards[index]
+			if titleId ~= nil and button == nil then
+				button = Instance.new("TextButton")
+				button.Font = Enum.Font.GothamMedium
+				button.TextXAlignment = Enum.TextXAlignment.Left
+				button.BackgroundColor3 = UiChrome.White
+				button.AutoButtonColor = false
+				button.TextTruncate = Enum.TextTruncate.AtEnd
+				button.ZIndex = 9
+				button.Parent = titleList
+				local corner = Instance.new("UICorner")
+				corner.CornerRadius = UDim.new(0, 6)
+				corner.Parent = button
+				button.Activated:Connect(function()
+					local picked = button:GetAttribute("TitleId")
+					if type(picked) == "number" then
+						TitleState.equip(picked)
+					end
+				end)
+				titleCards[index] = button
+			end
+			if button ~= nil then
+				button.Visible = titleId ~= nil
+				if titleId ~= nil then
+					local achievement = TitleRules.find(loadedTitles, titleId)
+					local name = if achievement ~= nil then Localization.getText(achievement.titleKey) else tostring(titleId)
+					button.Text = name
+					button:SetAttribute("TitleId", titleId)
+					button.Size = UDim2.new(1, -8, 0, 32)
+					button.Position = UDim2.fromOffset(4, (index - 1) * 36)
+					button.TextSize = 14
+					local selectedTitle = TitleState.equipped() == titleId and TitleState.mode() == "manual"
+					button.TextColor3 = if selectedTitle then UiChrome.White else UiChrome.Navy
+					button.BackgroundColor3 = if selectedTitle then UiChrome.Blue else UiChrome.White
+				end
+			end
+		end
+		if #ownedTitles == 0 then
+			titleList.CanvasSize = UDim2.fromOffset(0, 32)
+		else
+			titleList.CanvasSize = UDim2.fromOffset(0, #ownedTitles * 36)
+		end
 		applyLayout()
 	end
 
@@ -454,6 +548,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 			touched = false
 			category = "Body"
 			ShopState.request()
+			TitleState.sync()
 		end
 		if not open then
 			shown = false
@@ -478,21 +573,34 @@ function ShopScreen.bind(root: Frame): () -> ()
 		if item == nil or ShopState.pending() or item.id == equippedId() then
 			return
 		end
+		if item.currency == "Achievement" and not item.owned then
+			return
+		end
 		if item.owned then
 			ShopState.equip(item.id)
 		else
 			ShopState.buy(item.id)
 		end
 	end)
+	titleButton.Activated:Connect(function()
+		titlesOpen = not titlesOpen
+		render()
+	end)
+	autoButton.Activated:Connect(function()
+		TitleState.auto()
+	end)
 	bodyTab.Activated:Connect(function()
+		titlesOpen = false
 		category = "Body"
 		render()
 	end)
 	rimTab.Activated:Connect(function()
+		titlesOpen = false
 		category = "Rim"
 		render()
 	end)
 	effectTab.Activated:Connect(function()
+		titlesOpen = false
 		category = "Effect"
 		render()
 	end)
@@ -524,6 +632,11 @@ function ShopScreen.bind(root: Frame): () -> ()
 			render()
 		end
 	end)
+	local stopTitles = TitleState.listen(function()
+		if screen.Visible then
+			render()
+		end
+	end)
 	ShopState.start()
 	sync()
 	return function()
@@ -532,6 +645,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 		end
 		stopShop()
 		stopLocale()
+		stopTitles()
 		screen:Destroy()
 	end
 end

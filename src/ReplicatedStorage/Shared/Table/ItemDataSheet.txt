@@ -21,3 +21,13 @@ Id,Key
 10073,Ranking
 10078,Leave
 10079,Arena
+10080,AchievementDataSheet.Id=1 icon
+10081,AchievementDataSheet.Id=2 icon
+10082,AchievementDataSheet.Id=3 icon
+10083,AchievementDataSheet.Id=4 icon
+10084,AchievementDataSheet.Id=5 icon
+10085,AchievementDataSheet.Id=6 icon
+10086,AchievementDataSheet.Id=7 icon
+10087,AchievementDataSheet.Id=8 icon
+10088,AchievementDataSheet.Id=9 icon
+10089,AchievementDataSheet.Id=10 icon

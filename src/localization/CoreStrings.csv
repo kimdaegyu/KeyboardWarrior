@@ -2,6 +2,7 @@ Key,Source,Context,Example,ko,ja,id,vi,th,hi,es,pt
 Common.Ready,Ready,,,준비 완료,準備完了,Siap,Sẵn sàng,พร้อม,तैयार,Listo,Pronto
 Common.Score,Score {score},,,점수 {score},スコア {score},Skor {score},Điểm {score},คะแนน {score},स्कोर {score},Puntuación {score},Pontuação {score}
 Lobby.Pending,Syncing,,,동기화 중,同期中,Menyinkronkan,Đang đồng bộ,กำลังซิงค์,सिंक हो रहा है,Sincronizando,Sincronizando
+Lobby.FriendBoost,Friend boost +{percent}%,,,친구 부스터 +{percent}%,フレンドブースト +{percent}%,Bonus teman +{percent}%,Thưởng bạn bè +{percent}%,บูสต์เพื่อน +{percent}%,मित्र बूस्ट +{percent}%,Bono de amigos +{percent}%,Bônus de amigos +{percent}%
 Lobby.PhasePlay,Match,,,대결,対戦,Laga,Trận đấu,แข่ง,मैच,Partida,Partida
 Lobby.PhaseResult,Results,,,결산,結果,Hasil,Kết quả,สรุปผล,परिणाम,Resultados,Resultados
 Lobby.PhaseRest,Break,,,휴식,休憩,Istirahat,Nghỉ,พัก,विराम,Descanso,Pausa
@@ -119,7 +120,54 @@ Settings.SoundEffectsVolume,Sound effects volume,,,효과음,効果音の音量,
 Rank.RecordTitle,My record,,,내 기록,自分の記録,Rekor saya,Kỷ lục của tôi,สถิติของฉัน,मेरा रिकॉर्ड,Mi récord,Meu recorde
 Rank.Ordinal,#{rank},,,{rank}위,{rank}位,#{rank},Hạng {rank},อันดับ {rank},#{rank},#{rank},#{rank}
 Rank.SelfName,{name} · Me,,,{name} · 나,{name} · 自分,{name} · Saya,{name} · Tôi,{name} · ฉัน,{name} · मैं,{name} · Yo,{name} · Eu
+Rank.Pending,Pending,,,집계 중,集計中,Diproses,Đang cập nhật,กำลังอัปเดต,लंबित,Pendiente,Pendente
+Rank.Latest,Latest ranking,,,최근 집계 순위,直近の順位,Peringkat terbaru,Hạng gần nhất,อันดับล่าสุด,नवीनतम रैंक,Última posición,Última posição
 Rank.Outside,Outside top {count},,,상위 {count}위 밖,上位{count}位圏外,Di luar {count} besar,Ngoài top {count},นอกอันดับ {count} แรก,शीर्ष {count} से बाहर,Fuera del top {count},Fora do top {count}
 Match.CpmValue,{value} CPM,,,{value}타/분,{value} 打/分,{value} CPM,{value} CPM,{value} CPM,{value} CPM,{value} CPM,{value} CPM
 Rank.Language,Language,,,언어,言語,Bahasa,Ngôn ngữ,ภาษา,भाषा,Idioma,Idioma
 Rank.Cpm,CPM,,,분당타수,打鍵/分,CPM,CPM,CPM,CPM,CPM,CPM
+Achievement.Title1,Key Rookie,,,타자 새내기,,,,,,,
+Achievement.Title2,Word Runner,,,단어 질주자,,,,,,,
+Achievement.Title3,Quick Fingers,,,쾌속 타자,,,,,,,
+Achievement.Title4,Sentence Sprinter,,,문장 스프린터,,,,,,,
+Achievement.Title5,Keyboard Ace,,,키보드 에이스,,,,,,,
+Achievement.Title6,Rhythm Master,,,리듬 마스터,,,,,,,
+Achievement.Title7,Lightning Typist,,,번개 타자,,,,,,,
+Achievement.Title8,Keyboard Virtuoso,,,키보드 명인,,,,,,,
+Achievement.Title9,Typing Legend,,,타자의 전설,,,,,,,
+Achievement.Title10,TYPING GOD,,,타자의 신,,,,,,,
+Shop.NeedScore,Score {score},,,점수 {score},,,,,,,
+Shop.Titles,Titles,,,타이틀,,,,,,,
+Title.Auto,Auto equip,,,자동 장착,,,,,,,
+Title.Empty,No title yet,,,아직 타이틀이 없습니다,,,,,,,
+Result.TitleLine,{title} · {rim},,,{title} · {rim},,,,,,,
+Shop.Name.body_coral,Coral Pad,,,코랄 발판,,,,,,,
+Shop.Name.body_tangerine,Tangerine Pad,,,귤빛 발판,,,,,,,
+Shop.Name.body_lime,Lime Pad,,,라임 발판,,,,,,,
+Shop.Name.body_jade,Jade Pad,,,비취 발판,,,,,,,
+Shop.Name.body_aqua,Aqua Pad,,,물빛 발판,,,,,,,
+Shop.Name.body_sapphire,Sapphire Pad,,,사파이어 발판,,,,,,,
+Shop.Name.body_violet,Violet Pad,,,제비꽃 발판,,,,,,,
+Shop.Name.body_rose,Rose Pad,,,장미 발판,,,,,,,
+Shop.Name.body_silver,Silver Pad,,,은빛 발판,,,,,,,
+Shop.Name.body_sun_gold,Sun Gold Pad,,,태양빛 발판,,,,,,,
+Shop.Name.rim_title_01,Coral Rim,,,코랄 테두리,,,,,,,
+Shop.Name.rim_title_02,Tangerine Rim,,,귤빛 테두리,,,,,,,
+Shop.Name.rim_title_03,Lime Rim,,,라임 테두리,,,,,,,
+Shop.Name.rim_title_04,Jade Rim,,,비취 테두리,,,,,,,
+Shop.Name.rim_title_05,Aqua Rim,,,물빛 테두리,,,,,,,
+Shop.Name.rim_title_06,Sapphire Rim,,,사파이어 테두리,,,,,,,
+Shop.Name.rim_title_07,Violet Rim,,,제비꽃 테두리,,,,,,,
+Shop.Name.rim_title_08,Rose Rim,,,장미 테두리,,,,,,,
+Shop.Name.rim_title_09,Silver Rim,,,은빛 테두리,,,,,,,
+Shop.Name.rim_title_10,Sun Gold Rim,,,태양빛 테두리,,,,,,,
+Shop.Name.effect_coral,Coral Spark,,,코랄 불꽃,,,,,,,
+Shop.Name.effect_tangerine,Tangerine Spark,,,귤빛 불꽃,,,,,,,
+Shop.Name.effect_lime,Lime Spark,,,라임 불꽃,,,,,,,
+Shop.Name.effect_jade,Jade Spark,,,비취 불꽃,,,,,,,
+Shop.Name.effect_aqua,Aqua Spark,,,물빛 불꽃,,,,,,,
+Shop.Name.effect_sapphire,Sapphire Spark,,,사파이어 불꽃,,,,,,,
+Shop.Name.effect_violet,Violet Spark,,,제비꽃 불꽃,,,,,,,
+Shop.Name.effect_rose,Rose Spark,,,장미 불꽃,,,,,,,
+Shop.Name.effect_silver,Silver Spark,,,은빛 불꽃,,,,,,,
+Shop.Name.effect_sun_gold,Sun Gold Spark,,,태양빛 불꽃,,,,,,,

@@ -31,6 +31,7 @@ GPT Work의 기획 변경에는 목적, 해당 화면과 상태 전이, 데이�
 | 재현 | 기대 결과 |
 |---|---|
 | 영어 대결 및 연습 진입 직후 첫 키로 O를 누른 뒤, 떼고 다시 O를 누른다. 빠르게, 그리고 간격을 두고 반복한다. | 버퍼가 순서대로 `o`, `oo`가 되고 카메라 줌은 움직이지 않는다. |
+| 영어 대결에서 `balloon`을 입력한다. `l`을 눌렀다 떼고 바로 다시 `l`을 누른다. | 버퍼가 `ball`까지 이어지고 두 번째 `l`이 빠지지 않는다. `oo`도 같다. |
 | `look out`을 입력하고 다음 문제에도 첫 키로 O를 누른다. | 자동 제출 직전 버퍼에 세 개의 o가 원래 위치에 있고, 새 문제의 첫 글자는 `o` 하나다. |
 | 순위 패널을 여닫고, 채팅·Roblox 메뉴·창 전환에서 복귀하고, 한국어 연습에서 영어 연습으로 전환한다. 각 복귀 직후 O를 누른다. | 채팅 중에는 게임 초안이 유지된다. 영어 타자 화면이 입력을 다시 소유한 첫 키부터 반영된다. |
 | 모바일에서 화면 O → 블루투스 키보드 O → 연결 해제 후 화면 O를 입력한다. | 동일 문제의 초안이 `o` → `oo` → `ooo`로 이어진다. |
@@ -85,10 +86,11 @@ AGENTS.md, docs/GameDesign.ko.md, docs/Harness.ko.md를 기준으로 단일 Lobb
 
 전체 랭크는 로비 버튼에서 SafeRoot 팝업으로 연다. 서버가 OrderedDataStore에서 상위 50명을 조회하고, 인원수와 60초 캐시는 IngameConstants.Rank에 둔다. 같은 서버에서 캐시가 유효하면 다시 조회하지 않고, 동시에 들어온 조회는 한 번의 요청으로 합친다. 성공한 빈 목록은 실패가 아니다. 이전 목록이 있는 갱신 실패는 이전 목록과 갱신 지연 안내를 함께 남긴다. 개인 최고 점수는 프로필 저장이 성공한 뒤에만 반영한다. 저장값은 기존값과 새 값 중 큰 값이며 더 낮거나 같은 값은 기록을 내리지 않는다. 랭크 반영이 실패해도 완료된 보상 정산은 다시 실행하지 않는다. 실패한 기록은 같은 접속에서 제한된 횟수만 다시 쓰고, 다음 프로필 로드에서 다시 반영한다. Studio scope와 live scope를 분리한다.
 
-검수: 한 플레이어의 정식 점수 100, 80, 120은 최고 점수와 전체 랭크가 100, 100, 120이 되고 이후 연습 150은 120을 유지한다. 120, 120, 100은 1위, 1위, 3위다. 상위 50명 밖이면 내 최고 점수만 표시한다. bestScore가 0보다 큰 기존 프로필은 재접속만으로 순위에 오른다. ranked 없이 bestScore가 0인 기존 데이터는 미플레이로 두고 순위에 올리지 않는다. 이 변경 이후 0점으로 완료한 경기는 기록이다. 조회 실패 뒤에 캐시가 지나거나 다시 열면 복구할 수 있다. 정산 재시도는 보상을 중복 지급하지 않는다. 서로 다른 서버의 기록은 캐시 갱신 후 같은 목록에 나온다. 568×320·태블릿·PC에서 목록만 스크롤되고 닫기와 경기 시작 전환이 된다.
+검수: 한 플레이어의 정식 점수 100, 80, 120은 최고 점수와 전체 랭크가 100, 100, 120이 되고 이후 연습 150은 120을 유지한다. 120, 120, 100은 1위, 1위, 3위다. 상위 50명 밖에서도 최근 집계된 내 순위는 공동 10,000위까지 표시한다. bestScore가 0보다 큰 기존 프로필은 재접속만으로 순위에 오른다. ranked 없이 bestScore가 0인 기존 데이터는 미플레이로 두고 순위에 올리지 않는다. 이 변경 이후 0점으로 완료한 경기는 기록이다. 조회 실패 뒤에 캐시가 지나거나 다시 열면 복구할 수 있다. 정산 재시도는 보상을 중복 지급하지 않는다. 서로 다른 서버의 기록은 캐시 갱신 후 같은 목록에 나온다. 568×320·태블릿·PC에서 목록만 스크롤되고 닫기와 경기 시작 전환이 된다.
 
 골드 상점은 로비 버튼에서 SafeRoot 화면으로 연다. 상품 원본은 ShopDataSheet다. 기본 외형 3종은 Release Default이고 가격 0이며 모든 프로필이 소유한다. 파일럿 샘플은 Release Studio이고 본체 20골드, 테두리 30골드, 이펙트 40골드다. 한 경기 완료 보상 50골드면 본체를 살 수 있다. Studio가 아니면 Studio 행은 목록과 구매에서 빠진다. Live 행이 있어야 운영 판매가 열린다. 클라이언트는 상품 ID와 buy 또는 equip만 보낸다. 서버가 판매 여부, 통화, 가격, 잔액, 소유를 확인하고, 골드 차감과 소유권 추가를 같은 SetCache로 처리한다. 이미 소유한 상품과 골드 부족은 잔액을 바꾸지 않는다. 장착은 소유한 부위 하나만 바꾼다. 미리보기와 닫기는 서버에 장착을 보내지 않는다. 저장된 조합은 쌓이는 StackPad의 본체·테두리·이펙트에 칠하고 Arena.Pads.PadN은 바꾸지 않는다. 이탈·휴식 복귀·다음 배정 전에 쌓인 발판을 지운다. 발판 본체 크기와 CanCollide는 유지하고 장식은 CanCollide를 끈다.
 
+Achievement Rim은 골드로 살 수 없고, 잠겨 있으면 필요 점수를 보여 준다. 소유한 뒤에는 일반 Rim처럼 장착한다. starter_rim과 starter_effect만 테두리·파티클을 만들지 않는다. 정식 완주 199점은 타이틀 0개, 200점은 1개, 720점은 3개, 1,500점은 10개다. 같은 정산 재시도와 중도 퇴장·연습은 다시 지급하지 않는다. 자동이면 최고 ID를 장착하고, 수동 선택은 더 높은 점수를 받아도 유지된다. 결과창은 이번 정산의 새 타이틀과 Rim 이름만 스크롤로 보여 주고 닫기와 다음 경기 타이머를 가리지 않는다. EquippedTitleId는 로비와 경기 워프, 플레이, 결과에서 HumanoidRootPart 중심에 두고, 이름 하단을 머리 기본 자세에서 2스터드 위에 표시한다. 타이틀 글자는 닉네임 위에 가운데 정렬하고, 그 앞에 AchievementDataSheet.itemId 아이콘을 둔다. 단계가 바뀌어도 지우지 않는다. Idle·고개 흔들림·제자리 애니메이션은 따라가지 않고, 점프하면 몸 중심과 함께 오르내린다. 없으면 기본 이름을 유지한다.
 검수: 구매 전 선택과 닫기는 골드·소유·장착을 유지한다. 구매 연타와 저장 실패 후 재요청은 한 번만 차감된다. 골드가 부족하면 잔액과 소유가 그대로다. 구매 후 장착하고 재접속하면 잔액·소유·장착이 같다. 2인 경기에서 외형이 다르고, 다음 경기에서 발판 주인이 바뀌면 이전 이펙트가 남지 않는다. 568×320, 1024×768, PC에서 세 탭·목록·미리보기·구매/장착·닫기를 쓸 수 있다. 보상·설정·튜토리얼 저장은 owned·body·rim·effect를 유지한다.
 
 ## 데이터 원본과 변환
@@ -98,11 +100,11 @@ AGENTS.md, docs/GameDesign.ko.md, docs/Harness.ko.md를 기준으로 단일 Lobb
 | tables/QuestionDataSheet.xlsx | TableData.rows("QuestionDataSheet") → 출제·정답 판정 | Id는 의미 단위 고정 키. Kind, GradeId, Score, Enabled 및 언어 열. 번역 언어의 동일 행을 뜻으로 조회. 파일럿 활성 분량은 단어 30·문장 15이며 ID 1~3은 유지한다. 개수는 검증 상한이 아니다 |
 | GradeDataSheet.xlsx | GradeId → ColorHex → 문제 프레임 | #RRGGBB. 색상과 숫자 점수를 함께 표시 |
 | RewardDataSheet.xlsx, LevelDataSheet.xlsx | 서버 보상·누적 경험치 → 레벨 조회 | 정답 종류와 Complete 분리. TotalExp는 1레벨 0부터 단조 증가 |
-| ShopDataSheet.xlsx | 서버 구매·장착 / 클라이언트 카탈로그 | Body, Rim, Effect. Price와 PlatformProductId를 분리한다. Release는 Default, Studio, Live. Style은 부위별 외형 토큰. 기본 3종은 Default·0골드, 파일럿 샘플은 Studio·20/30/40골드 |
+| ShopDataSheet.xlsx | 서버 구매·장착 / 클라이언트 카탈로그 | Body, Rim, Effect. Price와 PlatformProductId를 분리한다. Release는 Default, Studio, Live. Color는 0~255를 세미콜론으로 잇는다. 기본 3종은 Default·0골드, 파일럿 샘플은 Studio·20/30/40골드. Live Gold는 판매하고 Achievement Rim은 점수 업적으로만 연다 |
 | ItemDataSheet.xlsx | Id → PNG → 페이지·슬롯 → ItemIconUtil | 현재 행은 재사용 UI 아이콘 목록. 상점 판매 SKU와 독립 |
 | IngameConstants.luau | 경기 서비스·공통 레이아웃 | 시간·정원·배율·화면 전환 기준 등 코드가 공유하는 시스템 수치 |
 | CoreStrings.csv | LocalizationService.CoreStrings → Shared.Localization.bind | UI 키는 안정적으로 유지. 문제 텍스트는 문제 Excel에서 관리 |
-| DataConfig.luau | PlayerStore → DocumentService. 전체 랭크는 같은 Studio/live scope의 OrderedDataStore | 현재 v1 필드는 schemaVersion, gold, exp, bestScore. grants, uiLocale·gloss·typing, tutorialSeen, ranked, owned, body, rim, effect가 없는 기존 프로필도 연다. typing이 없으면 영어다. 없으면 기본 발판으로 연다. tutorialSeen이 없으면 미확인이다. ranked 없이 bestScore가 0보다 크면 기존 완료 기록이고, ranked 없이 bestScore가 0이면 미플레이로 둔다. 비활성화된 언어 코드가 남아 있어도 연다 |
+| DataConfig.luau | PlayerStore → DocumentService. 전체 랭크는 같은 Studio/live scope의 OrderedDataStore | 현재 v1 필드는 schemaVersion, gold, exp, bestScore. grants, uiLocale·gloss·typing, tutorialSeen, ranked, owned, body, rim, effect, titles, titleMode, equippedTitle이 없는 기존 프로필도 연다. 없으면 타이틀은 비어 있고 자동 장착이다. typing이 없으면 영어다. 없으면 기본 발판으로 연다. tutorialSeen이 없으면 미확인이다. ranked 없이 bestScore가 0보다 크면 기존 완료 기록이고, ranked 없이 bestScore가 0이면 미플레이로 둔다. 비활성화된 언어 코드가 남아 있어도 연다 |
 | tables/TutorialDataSheet.xlsx | TableData.rows("TutorialDataSheet") → 튜토리얼 단계 | Id, SortOrder, TitleKey, BodyKey, Enabled. Enabled가 1인 행만 표시하고 단계 분모로 센다 |
 
 ## 파일럿 문제집 검수
@@ -187,3 +189,9 @@ StarterGui는 LandscapeSensor이고 클라이언트는 CoreUISafeInsets가 적�
 - UI 패널 2종과 중립 발광·반짝임·버스트 원본, 해당 아틀라스 4장, 기존 이미지 ID 및 영역 좌표를 함께 복사했다. Shared.UIImageUtil.apply(panel, "panel-9slice")로 사용한다. Studio 프리뷰는 이 경로로 9-slice를 실제 호출한다. 대상 경험에서 이미지가 로드되는지 확인하고, 권한이 다르면 복사한 페이지를 게시해 UIImageAssetIds를 갱신한다.
 - 화면 얼굴은 UiChrome이 고른다. 흰 패널은 panel-9slice와 남색(#172945) 글자, 선택은 selected-9slice와 흰 글자, 주요 행동은 primary-9slice와 남색 글자, 터치 키는 keycap-9slice다. 숫자 아이콘은 ItemIconUtil, 이름 이미지는 UIImageUtil만 쓴다. 로비의 개인 연습은 Practice, 상점은 Shop, 랭크는 아이템 10073이다. 세 버튼은 글자 없이 우측 경기 상태 카드 바로 위 한 줄이고, 아이콘은 정중앙이며 한 변의 약 60%다. 연습이 가능하면 primary 노란 배경이고, 대기 구역에서는 같은 아이콘의 흰 배경으로 입력을 막는다. 설정은 아이템 10063을 상단 검은 원에 둔 버튼이고 ScreenInsets는 TopbarSafeInsets이다. 골드 표시는 아이템 1이다. 상점 그림은 ShopDataSheet의 상품 ID를 UI 키로 쓴다.
 - Studio Play에서 리스폰과 창 크기 변경 후 SafeRoot가 하나인지 확인한다. PreviewCoreUI에서 패널 모서리·문자열·Output을 확인한다. 실제 저장 왕복은 M4 테스트 계정으로 수행한다. 게시할 Lobby Place의 최대 플레이어 수를 12로 설정하고 게시된 값도 확인한다. Luau의 경기 정원과 별개인 Place 설정이다.
+
+### 글로벌 랭킹 운영 검증
+
+Studio와 라이브는 별도 scope와 MemoryStore 이름을 쓴다. 두 테스트 서버에서 각각 랭크를 열어 Top 50과 CPM·언어가 같은지 확인한다. 신기록 저장 직후 ‘집계 중’에서 다음 집계의 개인 순위로 바뀌는지, 마지막 컷 동점자는 공동 순위이고 미달자는 개인 점수만 오르는지 확인한다. 집계 실패 시 이전 완료본을 표시하는 경우와 최초 집계가 없는 경우를 구분한다.
+
+로비 좌중단 패널은 프로필 로드, 완주 보상 지급, 골드 구매 후 값을 확인한다. 친구 0~4명 입퇴장, 같은 서버의 비친구, 모바일 조이스틱과의 간격 및 경험치 레벨 경계를 검수한다.

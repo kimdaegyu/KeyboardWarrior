@@ -56,12 +56,23 @@ def serialize(path, target):
         formulas.close()
 
 
+def staging_parent(output):
+    # Rojo 7.7.1 unwraps a missing path in change_processor.rs. A temp folder inside
+    # src/ReplicatedStorage/Shared is synced, then deleted, and the serve process panics.
+    # Stay on the same drive so Path.replace remains atomic, but keep the folder out of src/.
+    if output.resolve().drive.lower() == ROOT.resolve().drive.lower():
+        parent = ROOT / "build"
+        parent.mkdir(parents=True, exist_ok=True)
+        return parent
+    return output.parent
+
+
 def sync(source, output):
     if not source.is_dir():
         raise ValueError(f"Missing workbook directory: {source}")
     inputs = sorted(p for p in source.glob("*.xlsx") if not p.name.startswith("~$"))
     output.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=output.parent) as staging:
+    with TemporaryDirectory(dir=staging_parent(output)) as staging:
         stage = Path(staging)
         for path in inputs:
             try:

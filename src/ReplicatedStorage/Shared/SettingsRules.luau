@@ -1,6 +1,8 @@
 --!strict
 -- Language choices come from LanguageDataSheet. auto is UI-only and off is gloss-only.
 
+local TitleRules = if script then require(script.Parent.TitleRules) else require("./TitleRules")
+
 export type Profile = {
 	schemaVersion: number,
 	gold: number,
@@ -20,6 +22,11 @@ export type Profile = {
 	effect: string?,
 	bgmVolume: number?,
 	sfxVolume: number?,
+	titles: {number}?,
+	titleMode: string?,
+	equippedTitle: number?,
+	titleGrantId: string?,
+	titleGrantIds: {number}?,
 }
 
 export type Row = {
@@ -276,6 +283,7 @@ function SettingsRules.apply(profile: Profile, languages: {Language}, uiLocale: 
 	if type(profile.effect) == "string" then
 		updated.effect = profile.effect
 	end
+	TitleRules.copyInto(updated, profile)
 	return updated, "ok"
 end
 

@@ -93,6 +93,7 @@ end
 function InputPress.offer(state: State, gate: Gate): Decision
 	if gate.phase == "end" then
 		local owned = state.down[gate.key] == true
+		state.quiet[gate.key] = nil
 		state.down[gate.key] = nil
 		return if owned then "release" else "ignored"
 	end
@@ -147,10 +148,11 @@ local function withPhase(gate: Gate, phase: Phase): Gate
 	}
 end
 
--- Studio's own camera shortcut can swallow the Begin for O and I and only report End.
--- A key that is still physically down is not released, and a missed Begin is typed once.
+-- Studio's camera shortcut can report End for I or O while that key is still held.
+-- Every other letter trusts End, because IsKeyDown can still be true for that frame.
+-- Ignoring that End leaves the press open, so the next l in balloon never types.
 function InputPress.event(state: State, gate: Gate, physicallyDown: boolean): Decision
-	if gate.phase == "end" and physicallyDown then
+	if gate.phase == "end" and physicallyDown and (gate.key == "i" or gate.key == "o") then
 		return "ignored"
 	end
 	if gate.phase == "begin" and state.quiet[gate.key] then
@@ -216,7 +218,26 @@ local function press(state: State, routes: {Route}, key: string, focused: boolea
 	return text
 end
 
+-- Native Text may have advanced to the following letter before reconciliation.
+function InputPress.reconcileRepeat(before: string, letter: string, text: string): string
+	if string.sub(text, 1, #before) ~= before or string.sub(text, #before + 1, #before + 1) == letter then
+		return text
+	end
+	return before .. letter .. string.sub(text, #before + 1)
+end
+
 function InputPress.selfCheck()
+	local refocused = InputPress.beginState()
+	local lDown = gate("uis", "begin", "l", true, true, false, false, false)
+	local lUp = withPhase(lDown, "end")
+	assert(InputPress.event(refocused, lDown, true) == "textbox")
+	InputPress.holdQuiet(refocused)
+	InputPress.event(refocused, lUp, false)
+	assert(InputPress.event(refocused, lDown, true) == "textbox", "physical release rearms L after focus loss")
+	assert(InputPress.reconcileRepeat("bal", "l", "bal") == "ball", "recover a missing second l")
+	assert(InputPress.reconcileRepeat("bal", "l", "baloon") == "balloon", "keep the letters typed after a missed repeat")
+	assert(InputPress.reconcileRepeat("bal", "l", "ballo") == "ballo", "native repeat is counted once")
+	assert(InputPress.reconcileRepeat("bal", "l", "ba") == "ba", "an edited prefix is left alone")
 	assert(legacyDropsSecondPress(0.01), "the removed 20ms window drops a separate press")
 	local forward = InputPress.beginState()
 	assert(press(forward, { "cas", "uis" }, "o", false, false) == "o", "CAS then UIS is one o")
@@ -293,6 +314,18 @@ function InputPress.selfCheck()
 	assert(InputPress.event(emulator, spurious, true) == "ignored", "an End while O is still down does not cancel the press")
 	assert(InputPress.sample(emulator, sampled, false) == "release", "releasing O closes the press")
 	assert(InputPress.sample(emulator, sampled, true) == "apply", "the next emulator O is a second character")
+	local balloon = InputPress.beginState()
+	local beginL = gate("cas", "begin", "l", true, false, false, false, false)
+	local endL = gate("uis", "end", "l", true, false, false, false, false)
+	assert(InputPress.event(balloon, beginL, true) == "textbox", "the first l reaches the field")
+	assert(InputPress.event(balloon, endL, true) == "release", "l is released even when IsKeyDown still lags")
+	assert(InputPress.event(balloon, beginL, true) == "textbox", "balloon keeps the second l")
+	local touchL = InputPress.beginState()
+	local touchBegin = gate("cas", "begin", "l", false, false, true, false, false)
+	local touchEnd = gate("uis", "end", "l", false, false, true, false, false)
+	assert(InputPress.event(touchL, touchBegin, true) == "apply", "a touch keyboard types the first l")
+	assert(InputPress.event(touchL, touchEnd, true) == "release", "touch l is released on key up")
+	assert(InputPress.event(touchL, touchBegin, true) == "apply", "touch balloon keeps the second l")
 	local chatting = gate("cas", "begin", "o", false, true, true, true, false)
 	assert(InputPress.sample(InputPress.beginState(), chatting, true) == "ignored", "the emulator does not type O into chat")
 	assert(InputPress.releasesHold("textbox", "l") and not InputPress.releasesHold("duplicate", "o") and not InputPress.releasesHold("textbox", "space"), "only a new text-box letter opens the next question")

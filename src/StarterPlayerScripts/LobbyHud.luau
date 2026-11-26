@@ -37,9 +37,11 @@ function LobbyHud.bind(root: Frame): () -> ()
 	panel.Size = UDim2.fromScale(1, 1)
 	panel.Parent = root
 
+	local stopStats = require(script.Parent.LobbyPlayerStats).bind(panel, root)
+
 	local status = Instance.new("Frame")
 	status.Name = "MatchStatus"
-	status.AnchorPoint = Vector2.new(1, 0.5)
+	status.AnchorPoint = Vector2.new(1, 0)
 	status.Parent = panel
 	UiChrome.paint(status, "panel")
 	local function statusLine(name: string, y: number, height: number, maxFont: number): TextLabel
@@ -69,6 +71,8 @@ function LobbyHud.bind(root: Frame): () -> ()
 	local queueLine = statusLine("Waiting", 0.71, 0.29, 18)
 	queueLine.BackgroundColor3 = Color3.fromRGB(234, 241, 255)
 	queueLine.BackgroundTransparency = 0
+	local queueFont = queueLine:FindFirstChildOfClass("UITextSizeConstraint") :: UITextSizeConstraint
+	queueFont.MinTextSize = 10
 	queueLine.Font = Enum.Font.GothamMedium
 	UiChrome.round(queueLine, 5)
 
@@ -144,9 +148,12 @@ function LobbyHud.bind(root: Frame): () -> ()
 		if size.X < 1 or size.Y < 1 then return end
 		local metrics = Layout.metrics(size)
 		local edge = metrics.margin
-		local statusHeight = math.min(if metrics.compact then 90 else 116, math.floor(size.Y * 0.36))
+		local statusHeight = metrics.statusHeight
+		queueFont.MaxTextSize = metrics.hudTextSize
+		queueLine.TextSize = metrics.hudTextSize
+		queueLine:SetAttribute("FitWidth", nil)
 		local statusWidth = math.clamp(math.round(size.X * 0.19), 138, 240)
-		status.Position = UDim2.new(1, -edge, 0.40, 0)
+		status.Position = UDim2.new(1, -edge, 0, metrics.statusTop)
 		status.Size = UDim2.fromOffset(statusWidth, statusHeight)
 		local gap = math.max(4, math.round(statusWidth * 0.04))
 		local side = math.floor((statusWidth - gap * 2) / 3)
@@ -158,7 +165,7 @@ function LobbyHud.bind(root: Frame): () -> ()
 			gap = math.max(1, math.floor((statusWidth - side * 3) / 2))
 			spare = statusWidth - (side * 3 + gap * 2)
 		end
-		local cardTop = size.Y * 0.40 - statusHeight / 2
+		local cardTop = metrics.statusTop
 		local above = gap
 		local room = math.floor(cardTop - above)
 		local rowWidth = statusWidth
@@ -219,7 +226,12 @@ function LobbyHud.bind(root: Frame): () -> ()
 
 		phaseLine.Text = phase
 		timeLine.Text = time
-		queueLine.Text = queue
+		if queueLine.Text ~= queue or queueLine:GetAttribute("FitWidth") ~= queueLine.AbsoluteSize.X then
+			queueLine.Text = queue
+			queueLine.TextScaled = false
+			queueLine.TextScaled = not queueLine.TextFits
+			queueLine:SetAttribute("FitWidth", queueLine.AbsoluteSize.X)
+		end
 
 		local inMatch = Players.LocalPlayer:GetAttribute("InMatch") == true
 		local practicing = root:GetAttribute("PracticeOpen") == true
@@ -276,6 +288,7 @@ function LobbyHud.bind(root: Frame): () -> ()
 			connection:Disconnect()
 		end
 		stopLocale()
+		stopStats()
 		panel:Destroy()
 		topbar:Destroy()
 	end

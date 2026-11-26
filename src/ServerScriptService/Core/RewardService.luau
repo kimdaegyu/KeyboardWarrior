@@ -9,6 +9,8 @@ local TableData = require(ReplicatedStorage.Shared.TableData)
 local ProfileService = require(script.Parent.ProfileService)
 local QuestionService = require(script.Parent.QuestionService)
 local RankService = require(script.Parent.RankService)
+local ShopService = require(script.Parent.ShopService)
+local TitleService = require(script.Parent.TitleService)
 
 type Person = QuestionService.Person
 
@@ -104,6 +106,7 @@ local function viewFor(userId: number): {[string]: any}?
 		score = mine.score,
 		cpm = mine.cpm,
 		language = mine.language,
+		titles = mine.titles,
 		gold = mine.gold,
 		exp = mine.exp,
 		level = mine.level,
@@ -176,10 +179,19 @@ local function grant(person: Person, settlementId: string, deferSave: boolean?)
 		saveState[person.userId] = person.saveState
 		return
 	end
-	local gold, exp = RewardRules.reward(currentRates, person.words, person.sentences, person.finished)
+	local player = Players:GetPlayerByUserId(person.userId)
+	local friendPercent = if player then player:GetAttribute("FriendBoostPercent") else nil
+	local gold, exp = RewardRules.reward(currentRates, person.words, person.sentences, person.finished, friendPercent)
 	person.gold = gold
 	person.exp = exp
-	local ok, status = ProfileService.commit(person.userId, settlementId, gold, exp, person.score, person.finished, person.cpm, person.language)
+	local ok, status, unlocked = ProfileService.commit(person.userId, settlementId, gold, exp, person.score, person.finished, person.cpm, person.language)
+	if unlocked ~= nil then
+		person.titles = unlocked
+	end
+	if ok and player ~= nil then
+		TitleService.sync(player)
+		ShopService.notify(player)
+	end
 	if not ok then
 		person.saveState = "unavailable"
 		saveState[person.userId] = person.saveState
@@ -215,13 +227,21 @@ local function retryWaiting(userId: number)
 	if pending == nil then
 		return
 	end
-	local ok, status = ProfileService.commit(userId, pending.settlementId, pending.gold, pending.exp, pending.score, pending.finished, pending.cpm, pending.language)
+	local ok, status, unlocked = ProfileService.commit(userId, pending.settlementId, pending.gold, pending.exp, pending.score, pending.finished, pending.cpm, pending.language)
 	if not ok then
 		return
 	end
 	waiting[userId] = nil
 	local snapshot = snapshotFor(userId)
 	local person = if snapshot ~= nil then personRecord(snapshot, userId) else nil
+	if unlocked ~= nil and person ~= nil then
+		person.titles = unlocked
+	end
+	local player = Players:GetPlayerByUserId(userId)
+	if player ~= nil then
+		TitleService.sync(player)
+		ShopService.notify(player)
+	end
 	if person ~= nil then
 		rememberTotals(person)
 	end

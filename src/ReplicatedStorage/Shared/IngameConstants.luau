@@ -29,8 +29,14 @@ return table.freeze({
 		FloorEndScale = 1,
 		RimRotationSpeed = 45,
 	}),
+	FriendBoost = table.freeze({
+		PercentPerFriend = 10,
+		MaxFriends = 3,
+	}),
 	Rank = table.freeze({
 		TopCount = 50,
+		PersonalLimit = 10000,
+		IndexSeconds = 900,
 		CacheSeconds = 60,
 	}),
 	-- Initial layout targets in Roblox UI pixels. Measure the safe root, not the device.

@@ -67,6 +67,55 @@ local function isSlot(value: any): boolean
 	return value == nil or isShopId(value)
 end
 
+local function isTitleId(value: any): boolean
+	return type(value) == "number" and value == math.floor(value) and value >= 1 and value <= 100
+end
+
+local function isTitleList(value: any): boolean
+	if value == nil then
+		return true
+	end
+	if type(value) ~= "table" then
+		return false
+	end
+	local count = 0
+	local seen: {[number]: boolean} = {}
+	for index, entry in ipairs(value) do
+		if not isTitleId(entry) or seen[entry] then
+			return false
+		end
+		seen[entry] = true
+		count = index
+	end
+	if count > 16 then
+		return false
+	end
+	local size = 0
+	for _ in value do
+		size += 1
+	end
+	return size == count
+end
+
+local function isTitleMode(value: any): boolean
+	return value == nil or value == "auto" or value == "manual"
+end
+
+local function isEquippedTitle(value: any): boolean
+	return value == nil or (type(value) == "number" and value == math.floor(value) and value >= 0 and value <= 100)
+end
+
+local function isGrantId(value: any): boolean
+	if value == nil then
+		return true
+	end
+	if type(value) ~= "string" then
+		return false
+	end
+	local length = string.len(value)
+	return length >= 1 and length <= 80
+end
+
 local function isOwnedList(value: any): boolean
 	if value == nil then
 		return true
@@ -100,7 +149,8 @@ local function check(value: any)
 	local economy = validRecordLanguage and isCount(value.gold) and isCount(value.exp) and (value.bestScoreCpm == nil or isCount(value.bestScoreCpm)) and isCount(value.bestScore) and isGrantList(value.grants)
 	local settings = isUiLocale(value.uiLocale) and isGloss(value.gloss) and isTyping(value.typing) and isSeen(value.tutorialSeen) and isSeen(value.ranked) and isVolume(value.bgmVolume) and isVolume(value.sfxVolume)
 	local shop = isOwnedList(value.owned) and isSlot(value.body) and isSlot(value.rim) and isSlot(value.effect)
-	return economy and settings and shop, value
+	local titles = isTitleList(value.titles) and isTitleList(value.titleGrantIds) and isTitleMode(value.titleMode) and isEquippedTitle(value.equippedTitle) and isGrantId(value.titleGrantId)
+	return economy and settings and shop and titles, value
 end
 
 return {

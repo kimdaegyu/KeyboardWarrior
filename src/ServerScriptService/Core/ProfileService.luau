@@ -3,9 +3,12 @@
 
 local Players = game:GetService("Players")
 
-local RewardRules = require(game:GetService("ReplicatedStorage").Shared.RewardRules)
-local SettingsRules = require(game:GetService("ReplicatedStorage").Shared.SettingsRules)
-local TutorialRules = require(game:GetService("ReplicatedStorage").Shared.TutorialRules)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RewardRules = require(ReplicatedStorage.Shared.RewardRules)
+local SettingsRules = require(ReplicatedStorage.Shared.SettingsRules)
+local TableData = require(ReplicatedStorage.Shared.TableData)
+local TitleRules = require(ReplicatedStorage.Shared.TitleRules)
+local TutorialRules = require(ReplicatedStorage.Shared.TutorialRules)
 local PlayerStore = require(script.Parent.PlayerStore)
 
 type Profile = RewardRules.Profile
@@ -79,7 +82,16 @@ local function copyProfile(cache: any): Profile
 	if type(cache.effect) == "string" then
 		profile.effect = cache.effect
 	end
+	TitleRules.copyInto(profile, cache)
 	return profile
+end
+
+local function publishBalances(userId: number, profile: Profile)
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		player:SetAttribute("ProfileGold", profile.gold)
+		player:SetAttribute("ProfileExp", profile.exp)
+	end
 end
 
 local function normalize(document: any)
@@ -104,6 +116,7 @@ local function open(player: Player)
 	failed[userId] = nil
 	sessions[userId] = document
 	normalize(document)
+	publishBalances(userId, document:GetCache())
 	for _, handler in readyHandlers do
 		handler(userId)
 	end
@@ -160,20 +173,23 @@ function ProfileService.replace(userId: number, profile: Profile): boolean
 		return false
 	end
 	document:SetCache(profile)
+	publishBalances(userId, profile)
 	return true
 end
 
-function ProfileService.commit(userId: number, settlementId: string, gold: number, exp: number, score: number, finished: boolean, cpm: number?, language: string?): (boolean, string)
+function ProfileService.commit(userId: number, settlementId: string, gold: number, exp: number, score: number, finished: boolean, cpm: number?, language: string?): (boolean, string, {number}?)
 	local document = sessions[userId]
 	if document == nil or not document:IsOpen() or document:IsClosing() then
-		return false, "unavailable"
+		return false, "unavailable", nil
 	end
-	local updated, applied = RewardRules.applyGrant(document:GetCache(), settlementId, gold, exp, score, finished, cpm, language)
+	local loaded = TitleRules.catalog(TableData.rows("AchievementDataSheet") :: {TitleRules.Row})
+	local updated, applied, unlocked = RewardRules.applyGrant(document:GetCache(), settlementId, gold, exp, score, finished, cpm, language, if loaded ~= nil then loaded else nil)
 	if applied then
 		document:SetCache(updated)
-		return true, "pending"
+		publishBalances(userId, updated)
+		return true, "pending", unlocked
 	end
-	return true, "already"
+	return true, "already", unlocked
 end
 
 function ProfileService.applySettings(userId: number, uiLocale: any, gloss: any, typing: any, languages: any, bgmVolume: any, sfxVolume: any): (boolean, string)

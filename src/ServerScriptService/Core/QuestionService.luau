@@ -31,6 +31,7 @@ export type Person = {
 	gold: number,
 	exp: number,
 	saveState: string,
+	titles: {number}?,
 	level: number?,
 	totalExp: number?,
 	floorExp: number?,

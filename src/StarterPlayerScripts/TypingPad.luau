@@ -251,6 +251,9 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 	local strokes = InputPress.beginState()
 	local heldCameraKey: {[Enum.KeyCode]: boolean} = {}
 	local mirrorSeen = ""
+	local lastNativeKey: Enum.KeyCode? = nil
+	local releasedLetter: {key: Enum.KeyCode, text: string}? = nil
+	local pendingRepeat: {before: string, letter: string, key: Enum.KeyCode}? = nil
 	local applyHangul: (Enum.KeyCode) -> ()
 	local keysBound = false
 	local alive = true
@@ -405,6 +408,26 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 		return KEY_CHARS[key]
 	end
 
+	-- A KeyUp snapshot distinguishes an actual second press from a native
+	-- Text change that happened before the first InputBegan callback.
+	local function finishRepeat()
+		local pending = pendingRepeat
+		pendingRepeat = nil
+		if pending == nil or hold or ime or not engaged or not alive or shouldYield() or not hardware:IsFocused() then
+			return
+		end
+		local text = hardware.Text
+		if hardware.CursorPosition ~= caretAtEnd(text) then return end
+		local corrected = InputPress.reconcileRepeat(pending.before, pending.letter, text)
+		if corrected ~= text then
+			onDraft(corrected)
+			if hardware.Text == corrected then
+				hardware.CursorPosition = caretAtEnd(corrected)
+				hardware.SelectionStart = -1
+			end
+		end
+	end
+
 	local function consume(route: InputPress.Route, phase: InputPress.Phase, key: Enum.KeyCode, gameProcessed: boolean, sampled: boolean): (InputPress.Decision, InputPress.Gate)
 		local token = keyToken(key) or ""
 		local sample: InputPress.Gate = {
@@ -419,6 +442,9 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 			phase = phase,
 			key = token,
 		}
+		if pendingRepeat and ((phase == "end" and pendingRepeat.key == key) or (phase == "begin" and pendingRepeat.key ~= key)) then
+			finishRepeat()
+		end
 		local down = UserInputService:IsKeyDown(key)
 		local decision: InputPress.Decision = if token == ""
 			then "ignored"
@@ -426,8 +452,21 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 			else InputPress.event(strokes, sample, down)
 		if decision == "textbox" and InputPress.releasesHold(decision, token) then
 			hold = false
-		elseif decision == "apply" then
-			applyKey(key)
+			lastNativeKey = key
+			local previous = releasedLetter
+			releasedLetter = nil
+			local char = KEY_CHARS[key]
+			if previous and previous.key == key and char and string.lower(string.sub(previous.text, -1)) == char then
+				local upper = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+				pendingRepeat = {before = previous.text, letter = if upper then string.upper(char) else char, key = key}
+			end
+		elseif decision == "release" and sample.focused and not ime and not sample.touch and key == lastNativeKey and KEY_CHARS[key] then
+			-- An earlier overlapping key may be released after this one.
+			local text = hardware.Text
+			releasedLetter = if hardware.CursorPosition == caretAtEnd(text) and (hardware.SelectionStart <= 0 or hardware.SelectionStart == hardware.CursorPosition) then {key = key, text = text} else nil
+		elseif phase == "begin" and decision ~= "duplicate" then
+			lastNativeKey, releasedLetter = nil, nil
+			if decision == "apply" then applyKey(key) end
 		end
 		return decision, sample
 	end
@@ -522,18 +561,11 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 	end
 
 	local function yieldNow()
+		lastNativeKey, releasedLetter, pendingRepeat = nil, nil, nil
 		resumeToken += 1
 		InputPress.holdQuiet(strokes)
 		unbindAction()
 		releaseHardware()
-	end
-
-	local function readField(): string
-		local content = hardware.ContentText
-		if content == hardware.PlaceholderText then
-			content = hardware.Text
-		end
-		return QuestionRules.fieldAnswer(hardware.Text, hardware.CursorPosition, content)
 	end
 
 	local function clearField()
@@ -555,7 +587,7 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 			end
 			return
 		end
-		local text = if ime then HangulInput.text(syllable) else readField()
+		local text = if ime then HangulInput.text(syllable) else hardware.Text
 		local nextState = QuestionRules.composeEvent(compose, "text", text, nil)
 		compose = nextState
 		if hold then
@@ -580,6 +612,7 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 	end
 
 	function pad:settleField(answer: string)
+		lastNativeKey, releasedLetter, pendingRepeat = nil, nil, nil
 		hold = true
 		sealed = answer
 		sawKeyboard = false
@@ -652,6 +685,7 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 		end
 		HangulInput.clear(syllable)
 		compose = QuestionRules.composeIdle()
+		lastNativeKey, releasedLetter, pendingRepeat = nil, nil, nil
 		ime = enabled
 		applyInputChrome()
 		if engaged then
@@ -671,6 +705,7 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 			self:syncJump()
 			return
 		end
+		lastNativeKey, releasedLetter, pendingRepeat = nil, nil, nil
 		engaged = nextEngaged
 		setTypingOwner(engaged)
 		if not engaged then
@@ -683,9 +718,7 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 	end
 
 	hardware:GetPropertyChangedSignal("Text"):Connect(publishDraft)
-	hardware:GetPropertyChangedSignal("CursorPosition"):Connect(publishDraft)
-	hardware:GetPropertyChangedSignal("SelectionStart"):Connect(publishDraft)
-
+	
 	hardware.Focused:Connect(function()
 		if UserInputService.TouchEnabled or ime then
 			releaseHardware()
@@ -696,6 +729,7 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 	end)
 
 	hardware.FocusLost:Connect(function(enterPressed: boolean)
+		lastNativeKey, releasedLetter, pendingRepeat = nil, nil, nil
 		InputPress.holdQuiet(strokes)
 		if not engaged or UserInputService.TouchEnabled then
 			return
@@ -761,6 +795,7 @@ function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string
 			if not alive then
 				return
 			end
+			finishRepeat()
 			if engaged then
 				silenceCameraKeys(true)
 			end

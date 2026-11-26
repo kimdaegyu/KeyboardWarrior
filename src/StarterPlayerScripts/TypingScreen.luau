@@ -409,10 +409,7 @@ function TypingScreen.bind(root: Frame): () -> ()
 		if echo == "" or nextText ~= echo or current == nil then
 			return false
 		end
-		local completing = current.text == echo
-			and buffer ~= ""
-			and buffer ~= echo
-			and string.sub(echo, 1, #buffer) == buffer
+		local completing = QuestionRules.continuesAnswer(buffer, echo, current.text)
 			and sentMark ~= tostring(current.issue) .. "\0" .. echo
 		return not completing
 	end

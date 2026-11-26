@@ -17,6 +17,9 @@ local RankService = {}
 
 local scope = if RunService:IsStudio() then DataConfig.studioScope else DataConfig.liveScope
 local store = DataStoreService:GetOrderedDataStore(DataConfig.rankStoreName, scope)
+local snapshots = require(script.Parent.RankSnapshots).new(store, DataConfig.rankStoreName, scope)
+local confirmed: {[number]: number} = {}
+local changedAt: {[number]: number} = {}
 local started = false
 local stateEvent: RemoteEvent? = nil
 local names: {[number]: string} = {}
@@ -53,49 +56,49 @@ local pending: {[number]: number} = {}
 local publishing: {[number]: boolean} = {}
 local boardRows: {RankRules.Placed}? = nil
 local boardAt = 0
-local boardFailedAt = -10
-local boardStatus = "empty"
+local nextBoardCheck = 0
+local boardStatus = "loading"
 local fetching = false
-local waiters: {thread} = {}
 
 local function publish(userId: number, score: number): boolean
+	local changed = false
 	local ok = pcall(function()
 		store:UpdateAsync(tostring(userId), function(previous)
-			return RankRules.storedValue(previous, score)
+			local nextScore = RankRules.storedValue(previous, score)
+			changed = nextScore ~= nil
+			return nextScore
 		end)
 	end)
+	if ok then
+		confirmed[userId] = score
+		if changed then changedAt[userId] = os.time() end
+	end
 	return ok
 end
 
-local function pump(userId: number)
-	if publishing[userId] then
-		return
-	end
+local function noteSaved(userId: number, score: number)
+	if not RankRules.shouldPublish(score, confirmed[userId], snapshots.cutoff()) then return end
+	pending[userId] = math.max(pending[userId] or score, score)
+	if publishing[userId] then return end
 	publishing[userId] = true
 	task.spawn(function()
-		local tries = 0
-		while pending[userId] ~= nil and tries < 3 do
+		local backoff = 2
+		while pending[userId] ~= nil do
 			local target = pending[userId]
-			if publish(userId, target) then
-				if pending[userId] == target then
-					pending[userId] = nil
-				end
-				tries = 0
+			if not RankRules.shouldPublish(target, confirmed[userId], snapshots.cutoff()) or publish(userId, target) then
+				if pending[userId] == target then pending[userId] = nil end
+				backoff = 2
 			else
-				tries += 1
-				if pending[userId] ~= nil and tries < 3 then
-					task.wait(2)
-				end
+				if not Players:GetPlayerByUserId(userId) then break end
+				task.wait(backoff)
+				backoff = math.min(backoff * 2, 60)
 			end
 		end
-		publishing[userId] = false
+		publishing[userId] = nil
+		if not Players:GetPlayerByUserId(userId) then
+			pending[userId], confirmed[userId], changedAt[userId] = nil, nil, nil
+		end
 	end)
-end
-
-local function noteSaved(userId: number, score: number)
-	local queued = pending[userId]
-	pending[userId] = if queued == nil then score else math.max(queued, score)
-	pump(userId)
 end
 
 -- Reuse offline profile reads across board refreshes. A changed score bypasses the cache.
@@ -124,18 +127,19 @@ local function scoreDetails(userId: number, score: number): (number?, string?)
 	return nil, nil
 end
 
-local function fetchBoard(): boolean
+local function buildBoard(keepLease: (() -> ())?): {RankRules.Placed}
 	local ok, page = pcall(function()
 		return store:GetSortedAsync(false, constants.Rank.TopCount):GetCurrentPage()
 	end)
 	if not ok or type(page) ~= "table" then
-		return false
+		error("rank score page unavailable")
 	end
 	for userId, detail in details do
 		if detail.expires <= os.clock() then details[userId] = nil end
 	end
 	local entries: {RankRules.Entry} = {}
 	for _, item in page do
+		if keepLease then keepLease() end
 		if type(item) ~= "table" then
 			continue
 		end
@@ -152,47 +156,40 @@ local function fetchBoard(): boolean
 			})
 		end
 	end
-	boardRows = RankRules.place(entries)
-	boardAt = os.clock()
-	boardStatus = if #boardRows == 0 then "empty" else "ready"
-	return true
+	return RankRules.place(entries)
 end
 
-local function board(): {RankRules.Placed}?
-	local now = os.clock()
-	if boardRows ~= nil and now - boardAt < constants.Rank.CacheSeconds then
-		boardStatus = if #boardRows == 0 then "empty" else "ready"
-		return boardRows
+local function refreshBoard()
+	local ok, data = pcall(snapshots.top, buildBoard)
+	-- If MemoryStore is unavailable, keep serving a server-local board.
+	if not ok and (not boardRows or os.time() - boardAt >= constants.Rank.CacheSeconds) then
+		local built, rows = pcall(buildBoard)
+		if built then data = {rows = rows, at = os.time()} else data = nil end
 	end
-	if now - boardFailedAt < 2 then
-		return boardRows
+	if type(data) == "table" and data.at >= boardAt then
+		boardRows, boardAt = data.rows, data.at
 	end
-	if fetching then
-		table.insert(waiters, coroutine.running())
-		coroutine.yield()
-		return boardRows
-	end
-	fetching = true
-	local ok = fetchBoard()
-	if not ok then
-		boardFailedAt = os.clock()
-		if boardRows ~= nil then
-			boardStatus = "stale"
-		else
-			boardStatus = "failed"
-		end
-	end
+	nextBoardCheck = os.clock() + (if boardRows and os.time() - boardAt < constants.Rank.CacheSeconds
+		then math.max(2, constants.Rank.CacheSeconds - (os.time() - boardAt)) else 5)
 	fetching = false
-	local waiting = waiters
-	waiters = {}
-	for _, thread in waiting do
-		task.spawn(thread)
-	end
-	return boardRows
+	if not boardRows then boardStatus = if ok then "loading" else "failed" end
 end
 
 local function snapshot()
-	board()
+	if os.clock() >= nextBoardCheck and not fetching then
+		fetching = true
+		if boardRows then
+			task.spawn(refreshBoard)
+		else
+			refreshBoard()
+		end
+	end
+	if boardRows then
+		boardStatus = if os.time() - boardAt >= constants.Rank.CacheSeconds then "stale"
+			elseif #boardRows == 0 then "empty" else "ready"
+	elseif fetching then
+		boardStatus = "loading"
+	end
 	return boardStatus, boardRows or {}
 end
 
@@ -213,7 +210,19 @@ local function payload(userId: number)
 	if profile then
 		best, recorded = RankRules.recordOf(profile.bestScore, profile.ranked)
 	end
-	return {status = status, rows = rows, recorded = recorded, bestScore = best, bestScoreLanguage = if profile then profile.bestScoreLanguage else nil, bestScoreCpm = if profile then profile.bestScoreCpm else nil}
+	local place, outside = nil, false
+	if best ~= nil then
+		for _, row in rows do
+			if row.userId == userId and row.score == best then
+				place = row.rank
+				break
+			end
+		end
+		if not place then
+			place, outside = snapshots.personal(userId, best, confirmed[userId], changedAt[userId])
+		end
+	end
+	return {status = status, rows = rows, recorded = recorded, personalRank = place, outside = outside, bestScore = best, bestScoreLanguage = if profile then profile.bestScoreLanguage else nil, bestScoreCpm = if profile then profile.bestScoreCpm else nil}
 end
 
 local function push(player: Player)
@@ -234,8 +243,26 @@ function RankService.start()
 	ProfileService.setReadyHandler(function(userId: number)
 		RankService.noteSaved(userId)
 	end)
+	task.spawn(function()
+		while true do
+			local ok, err = pcall(snapshots.refreshIndex)
+			if not ok then warn("Global rank index refresh failed", err) end
+			task.wait(constants.Rank.CacheSeconds + math.random(0, 10))
+		end
+	end)
+	local lastRequest: {[Player]: number} = {}
+	local busy: {[Player]: boolean} = {}
+	Players.PlayerRemoving:Connect(function(player)
+		lastRequest[player], busy[player] = nil, nil
+		local id = player.UserId
+		if not publishing[id] then confirmed[id], changedAt[id] = nil, nil end
+	end)
 	request.OnServerEvent:Connect(function(player: Player)
-		push(player)
+		if busy[player] or os.clock() - (lastRequest[player] or -10) < 2 then return end
+		lastRequest[player], busy[player] = os.clock(), true
+		local ok, err = pcall(push, player)
+		busy[player] = nil
+		if not ok then warn("Global rank request failed", err) end
 	end)
 end
 

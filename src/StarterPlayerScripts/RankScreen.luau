@@ -244,7 +244,7 @@ function RankScreen.bind(root: Frame): () -> ()
 		placeLabel.Text = Localization.getText("Rank.Place")
 		playerLabel.Text = Localization.getText("Rank.Player")
 		scoreLabel.Text = Localization.getText("Rank.Score")
-		recordTitle.Text = Localization.getText("Rank.RecordTitle")
+		recordTitle.Text = Localization.getText("Rank.Latest")
 		bestTitle.Text = Localization.getText("Rank.Score")
 		local best = RankState.bestScore()
 		mineLabel.Text = if best ~= nil then formatScore(best) else "—"
@@ -260,7 +260,7 @@ function RankScreen.bind(root: Frame): () -> ()
 		notice.Text = Localization.getText(noticeKey)
 		local mine = Players.LocalPlayer.UserId
 		local entries = if showRows then RankState.rows() else {}
-		local onBoard = false
+		
 		for index, entry in entries do
 			local row = ensureRow(index)
 			row.Visible = true
@@ -271,10 +271,6 @@ function RankScreen.bind(root: Frame): () -> ()
 			local nameCell = row:FindFirstChild("Name") :: TextLabel
 			local scoreCell = row:FindFirstChild("Score") :: TextLabel
 			placeCell.Text = Localization.getText("Rank.Ordinal", nil, { rank = entry.rank })
-			if mineRow then
-				onBoard = true
-				position.Text = placeCell.Text
-			end
 			nameCell.Text = if mineRow then Localization.getText("Rank.SelfName", nil, { name = entry.name }) else entry.name
 			local languageCell = row:FindFirstChild("Language") :: TextLabel
 			languageCell.Text = entry.language or "—"
@@ -282,8 +278,13 @@ function RankScreen.bind(root: Frame): () -> ()
 			cpmCell.Text = if entry.cpm ~= nil then formatScore(entry.cpm) else "—"
 			scoreCell.Text = formatScore(entry.score)
 		end
-		if RankState.recorded() and not onBoard and board == "ready" and #entries >= constants.Rank.TopCount then
-			position.Text = Localization.getText("Rank.Outside", nil, { count = constants.Rank.TopCount })
+		local place, outside = RankState.position()
+		if place then
+			position.Text = Localization.getText("Rank.Ordinal", nil, { rank = formatScore(place) })
+		elseif outside then
+			position.Text = Localization.getText("Rank.Outside", nil, { count = formatScore(constants.Rank.PersonalLimit) })
+		elseif RankState.recorded() then
+			position.Text = Localization.getText("Rank.Pending")
 		end
 		if RankState.received() and not RankState.recorded() then
 			mineLabel.Text = Localization.getText("Rank.None")
@@ -340,12 +341,26 @@ function RankScreen.bind(root: Frame): () -> ()
 			render()
 		end
 	end)
+	local refresh = task.spawn(function()
+		local lastRefresh = -math.huge
+		while true do
+			task.wait(5)
+			local interval = if RankState.status() == "ready" or RankState.status() == "empty" then constants.Rank.CacheSeconds else 5
+			if screen.Visible and os.clock() - lastRefresh >= interval then
+				lastRefresh = os.clock()
+				RankState.request()
+			elseif not screen.Visible then
+				lastRefresh = os.clock()
+			end
+		end
+	end)
 	RankState.start()
 	sync()
 	return function()
 		for _, connection in connections do
 			connection:Disconnect()
 		end
+		task.cancel(refresh)
 		stopRank()
 		stopLocale()
 		screen:Destroy()

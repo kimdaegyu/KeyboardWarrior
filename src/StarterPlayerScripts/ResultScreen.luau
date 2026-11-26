@@ -12,6 +12,7 @@ local Localization = require(ReplicatedStorage.Shared.Localization)
 local RewardRules = require(ReplicatedStorage.Shared.RewardRules)
 local TableData = require(ReplicatedStorage.Shared.TableData)
 local ResultLayout = require(ReplicatedStorage.Shared.ResultLayout)
+local TitleRules = require(ReplicatedStorage.Shared.TitleRules)
 local ItemIconUtil = require(ReplicatedStorage.Shared.ItemIconUtil)
 local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
 
@@ -63,6 +64,18 @@ function ResultScreen.bind(root: Frame): () -> ()
 	local scoreLabel = stat("Score", UiChrome.Navy, Enum.TextXAlignment.Left)
 	local languageLabel = stat("Language", UiChrome.Navy, Enum.TextXAlignment.Right)
 	local rewardLabel = stat("Reward", UiChrome.Navy, Enum.TextXAlignment.Left)
+	local titleScroll = Instance.new("ScrollingFrame")
+	titleScroll.Name = "Titles"
+	titleScroll.BackgroundTransparency = 1
+	titleScroll.BorderSizePixel = 0
+	titleScroll.ScrollBarThickness = 6
+	titleScroll.Visible = false
+	titleScroll.ZIndex = 10
+	titleScroll.Parent = summary
+	local titleLabels: {TextLabel} = {}
+	local titleCatalog = TitleRules.catalog(TableData.rows("AchievementDataSheet") :: {TitleRules.Row}) or {}
+	local laidTitles = 0
+	local applyLayout: () -> ()
 	local levelLabel = stat("Level", UiChrome.Navy, Enum.TextXAlignment.Left)
 	local saveLabel = stat("Save", UiChrome.Navy, Enum.TextXAlignment.Right)
 	local nextLabel = stat("Next", UiChrome.Navy, Enum.TextXAlignment.Center)
@@ -198,11 +211,29 @@ function ResultScreen.bind(root: Frame): () -> ()
 		return row
 	end
 
+	local function titleIds(): {number}
+		local current = view
+		if current == nil or type(current.titles) ~= "table" then
+			return {}
+		end
+		local ids: {number} = {}
+		for _, id in current.titles do
+			if type(id) == "number" then
+				table.insert(ids, id)
+			end
+		end
+		return ids
+	end
+
 	local function render()
 		local current = view
 		local show = showing() and current ~= nil
 		screen.Visible = show
 		if not show or current == nil then
+			return
+		end
+		if #titleIds() ~= laidTitles then
+			applyLayout()
 			return
 		end
 		placeLabel.Text = Localization.getText("Result.Place", nil, {
@@ -260,9 +291,38 @@ function ResultScreen.bind(root: Frame): () -> ()
 			end
 		end
 		list.CanvasSize = UDim2.fromOffset(0, math.max(#rows, 1) * ResultLayout.rowStride)
+		local earned = titleIds()
+		for index = 1, math.max(#earned, #titleLabels) do
+			local titleId = earned[index]
+			local label = titleLabels[index]
+			if titleId ~= nil and label == nil then
+				label = Instance.new("TextLabel")
+				label.BackgroundTransparency = 1
+				label.Font = Enum.Font.GothamMedium
+				label.TextXAlignment = Enum.TextXAlignment.Left
+				label.TextColor3 = UiChrome.Navy
+				label.TextTruncate = Enum.TextTruncate.AtEnd
+				label.ZIndex = 11
+				label.Parent = titleScroll
+				titleLabels[index] = label
+			end
+			if label ~= nil then
+				label.Visible = titleId ~= nil
+				if titleId ~= nil then
+					local achievement = TitleRules.find(titleCatalog, titleId)
+					local titleName = if achievement ~= nil then Localization.getText(achievement.titleKey) else tostring(titleId)
+					local rimName = if achievement ~= nil then Localization.getText("Shop.Name." .. achievement.shopId) else ""
+					label.Text = Localization.getText("Result.TitleLine", nil, { title = titleName, rim = rimName })
+					label.TextSize = 14
+					label.Size = UDim2.new(1, -8, 0, 16)
+					label.Position = UDim2.fromOffset(0, (index - 1) * 18)
+				end
+			end
+		end
+		titleScroll.CanvasSize = UDim2.fromOffset(0, math.max(#earned, 1) * 18)
 	end
 
-	local function applyLayout()
+	applyLayout = function()
 		local size = root.AbsoluteSize
 		if size.X < 50 or size.Y < 50 then
 			return
@@ -273,15 +333,21 @@ function ResultScreen.bind(root: Frame): () -> ()
 			viewport = math.min(viewport, content)
 		end
 		local plan = ResultLayout.plan(viewport, size.Y, constants.UI.CompactHeight, constants.UI.CompactWidth)
+		local earnedCount = #titleIds()
+		laidTitles = earnedCount
+		local titleBox = 0
+		if earnedCount > 0 then
+			titleBox = math.min(if plan.compact then 54 else 72, earnedCount * 18)
+		end
 		viewport = math.min(viewport, 600)
 		local origin = math.floor((size.X - viewport) / 2)
 		local x = origin + plan.margin
 		local width = math.max(0, viewport - plan.margin * 2)
 		summary.Position = UDim2.fromOffset(x, plan.margin)
-		summary.Size = UDim2.fromOffset(width, plan.summaryHeight)
+		summary.Size = UDim2.fromOffset(width, plan.summaryHeight + titleBox)
 
-		listPanel.Position = UDim2.fromOffset(x, plan.margin + plan.summaryHeight + plan.gap)
-		listPanel.Size = UDim2.fromOffset(width, plan.listHeight)
+		listPanel.Position = UDim2.fromOffset(x, plan.margin + plan.summaryHeight + titleBox + plan.gap)
+		listPanel.Size = UDim2.fromOffset(width, math.max(0, plan.listHeight - titleBox))
 
 		local textSize = if plan.compact then 14 else 18
 		local placeSize = if plan.compact then 22 else 32
@@ -310,6 +376,10 @@ function ResultScreen.bind(root: Frame): () -> ()
 		rewardLabel.Position = UDim2.fromOffset(12 + rewardShift, y)
 		rewardLabel.Size = UDim2.new(1, -24 - rewardShift, 0, textSize + 6)
 		y += textSize + 8
+		titleScroll.Visible = titleBox > 0
+		titleScroll.Position = UDim2.fromOffset(12, y)
+		titleScroll.Size = UDim2.new(1, -24, 0, titleBox)
+		y += titleBox
 		levelLabel.Position = UDim2.fromOffset(12, y)
 		levelLabel.Size = UDim2.new(0.62, -12, 0, textSize + 6)
 		saveLabel.Position = UDim2.new(0.62, 0, 0, y)

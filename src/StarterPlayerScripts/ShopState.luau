@@ -8,7 +8,9 @@ export type Item = {
 	category: string,
 	price: number,
 	release: string,
-	style: string,
+	color: string,
+	currency: string,
+	score: number?,
 	owned: boolean,
 }
 
@@ -115,13 +117,15 @@ local function onState(message: any)
 	end
 	local nextItems: {Item} = {}
 	for _, row in message.items do
-		if type(row) == "table" and type(row.id) == "string" and type(row.category) == "string" and type(row.price) == "number" and type(row.style) == "string" then
+		if type(row) == "table" and type(row.id) == "string" and type(row.category) == "string" and type(row.price) == "number" and type(row.color) == "string" then
 			table.insert(nextItems, {
 				id = row.id,
 				category = row.category,
 				price = row.price,
 				release = if type(row.release) == "string" then row.release else "",
-				style = row.style,
+				color = row.color,
+				currency = if type(row.currency) == "string" then row.currency else "Gold",
+				score = if type(row.score) == "number" then row.score else nil,
 				owned = row.owned == true,
 			})
 		end

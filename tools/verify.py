@@ -73,17 +73,31 @@ def check_data(folder):
         require(row["Enabled"] in ("0", "1"), f"Invalid question flag {row}")
         if row["Enabled"] == "1":
             require(re.fullmatch(r"[a-z]+(?: [a-z]+)*", row["en"]), f"QWERTY cannot type {row['Id']}")
-    shop_rows = read_rows(folder, "ShopDataSheet", "Id Category Currency Price Enabled PlatformProductId Release Style")
-    styles = {"Body": {"purple", "cyan"}, "Rim": {"none", "gold"}, "Effect": {"none", "spark"}}
+    def rgb_ok(value):
+        parts = str(value).split(";")
+        if len(parts) != 3:
+            return False
+        for part in parts:
+            if not re.fullmatch(r"\d{1,3}", part) or int(part) > 255:
+                return False
+        return True
+
+    shop_rows = read_rows(folder, "ShopDataSheet", "Id Category Currency Price Enabled PlatformProductId Release Color")
+    categories = {"Body", "Rim", "Effect"}
     for row in shop_rows:
-        require(row["Category"] in styles and row["Style"] in styles[row["Category"]], f"Unknown shop style {row}")
-        require(row["Currency"] in ("Gold", "Robux") and row["Enabled"] in ("0", "1"), f"Invalid shop row {row}")
+        require(row["Category"] in categories, f"Unknown shop category {row}")
+        require(rgb_ok(row["Color"]), f"Invalid shop color {row}")
+        require(row["Currency"] in ("Gold", "Robux", "Achievement") and row["Enabled"] in ("0", "1"), f"Invalid shop row {row}")
         require(row["Release"] in ("Default", "Studio", "Live"), f"Unknown shop release {row}")
         price = count(row, "Price")
+        if row["Currency"] == "Achievement":
+            require(row["Category"] == "Rim" and price == 0, f"An achievement reward is a free rim {row}")
         if row["Release"] == "Default":
             require(price == 0 and row["Enabled"] == "1", f"A default cosmetic is free {row}")
         if row["Release"] == "Studio" and row["Enabled"] == "1" and row["Currency"] == "Gold":
             require(price > 0, f"A studio sample needs a gold price {row}")
+        if row["Release"] == "Live" and row["Enabled"] == "1" and row["Currency"] == "Gold":
+            require(price > 0, f"A live gold item needs a price {row}")
         if row["Enabled"] == "1" and row["Currency"] == "Robux":
             require(count(row, "PlatformProductId") > 0, f"Missing product {row}")
     by_shop = {row["Id"]: row for row in shop_rows}
@@ -102,7 +116,30 @@ def check_data(folder):
         and by_shop["pilot_effect"]["Release"] == "Studio",
         "pilot samples sell only in Studio at the short-play prices",
     )
-    require(not any(row["Release"] == "Live" and row["Enabled"] == "1" for row in shop_rows), "live sales stay closed")
+    require(by_shop["starter_rim"]["Color"] == "0;0;0" and by_shop["starter_effect"]["Color"] == "0;0;0", "starter rim and effect keep the hidden color token")
+    releases = {}
+    for row in shop_rows:
+        releases[row["Release"]] = releases.get(row["Release"], 0) + 1
+    require(releases.get("Default") == 3 and releases.get("Studio") == 3 and releases.get("Live") == 30, "default, studio, and live shop rows stay separated")
+    live_gold = [row for row in shop_rows if row["Release"] == "Live" and row["Currency"] == "Gold" and row["Enabled"] == "1"]
+    require(len(live_gold) == 20, "live gold sales are the body and effect rows")
+    body_prices = sorted(int(row["Price"]) for row in live_gold if row["Category"] == "Body")
+    effect_prices = sorted(int(row["Price"]) for row in live_gold if row["Category"] == "Effect")
+    require(body_prices[0] == 100 and body_prices[-1] == 2000 and len(body_prices) == 10, "live body prices span the opening range")
+    require(effect_prices[0] == 150 and effect_prices[-1] == 2250 and len(effect_prices) == 10, "live effect prices span the opening range")
+    achievements = read_rows(folder, "AchievementDataSheet", "Id TitleKey Score ShopId RobloxBadgeId itemId")
+    item_ids = {row["Id"] for row in read_rows(folder, "ItemDataSheet", "Id Key")}
+    expected_scores = ["200", "500", "700", "900", "1000", "1100", "1200", "1300", "1400", "1500"]
+    require([row["Score"] for row in achievements] == expected_scores, "title scores stay on the published steps")
+    seen_shops = set()
+    for row in achievements:
+        require(row["RobloxBadgeId"] == "", f"badge ids stay empty until a text id is entered {row}")
+        require(row["ShopId"] not in seen_shops, f"duplicate title reward {row}")
+        seen_shops.add(row["ShopId"])
+        reward = by_shop.get(row["ShopId"])
+        require(reward is not None and reward["Currency"] == "Achievement" and reward["Category"] == "Rim", f"title reward is missing {row}")
+        require(re.fullmatch(r"Achievement\.Title\d+", row["TitleKey"]) is not None, f"title key {row}")
+        require(row["itemId"] in item_ids and int(row["itemId"]) == 10079 + int(row["Id"]), f"title icon {row}")
     rewards = read_rows(folder, "RewardDataSheet", "Id Gold Exp")
     require({"Word", "Sentence", "Complete"} <= {r["Id"] for r in rewards}, "Missing reward")
     for row in rewards:
@@ -976,6 +1013,9 @@ def profile_ok(value):
         and slot_ok(value.get("effect"))
         and volume_ok(value.get("bgmVolume"))
         and volume_ok(value.get("sfxVolume"))
+        and (value.get("titleMode") in (None, "auto", "manual"))
+        and (value.get("equippedTitle") is None or (isinstance(value.get("equippedTitle"), int) and not isinstance(value.get("equippedTitle"), bool) and 0 <= value.get("equippedTitle") <= 100))
+        and (value.get("titles") is None or (isinstance(value.get("titles"), list) and all(isinstance(entry, int) and not isinstance(entry, bool) and entry >= 1 for entry in value.get("titles"))))
     )
 
 
@@ -1770,6 +1810,8 @@ def check_shop():
     lobby = (ROOT / "src/StarterPlayerScripts/LobbyHud.luau").read_text(encoding="utf-8")
     typing = (ROOT / "src/StarterPlayerScripts/TypingScreen.luau").read_text(encoding="utf-8")
     require("ShopOpen" in lobby and '"Shop"' in lobby and "ShopOpen" in typing, "shop shares the lobby menu and releases match input")
+    overhead = (ROOT / "src/StarterPlayerScripts/TitleOverhead.luau").read_text(encoding="utf-8")
+    require("billboard.Adornee = root" in overhead and "offset.Y + CLEARANCE + BILLBOARD_HEIGHT * 0.5" in overhead and "joint.Transform" not in overhead and "inLobby" not in overhead and "ItemIconUtil.apply" in overhead and "TextXAlignment.Left" not in overhead and "TextBounds" in overhead, "the title stays centered and the icon sits in front of the glyphs")
     design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
     harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
     require("Studio에서만 판매" in design and "한 번만 차감" in design, "the shop pilot is recorded")
@@ -1798,9 +1840,18 @@ def check_shop():
         "Shop.Name.pilot_body",
         "Shop.Name.pilot_rim",
         "Shop.Name.pilot_effect",
+        "Shop.NeedScore",
+        "Shop.Titles",
+        "Title.Auto",
+        "Result.TitleLine",
     ):
         require(key in copy and copy[key]["Source"].strip() and copy[key]["ko"].strip(), f"Missing string {key}")
     require("{price}" in copy["Shop.Buy"]["ko"] and "{gold}" in copy["Shop.Gold"]["ko"], "shop prices use placeholders")
+    for index in range(1, 11):
+        title_key = f"Achievement.Title{index}"
+        rim_key = f"Shop.Name.rim_title_{index:02d}"
+        require(title_key in copy and copy[title_key]["ko"].strip(), f"Missing string {title_key}")
+        require(rim_key in copy and copy[rim_key]["ko"].strip(), f"Missing string {rim_key}")
 
 
 def check_key_press():
@@ -1814,6 +1865,8 @@ def check_key_press():
         lune = Path(found) if found else None
     require(lune is not None, "lune is required to run the O-key press check")
     subprocess.run([str(lune), "run", str(ROOT / "tools" / "m2_check.luau")], check=True, cwd=ROOT)
+    subprocess.run([str(lune), "run", str(ROOT / "tools" / "rank_snapshot_check.luau")], check=True, cwd=ROOT)
+    subprocess.run([str(lune), "run", str(ROOT / "tools" / "friend_boost_check.luau")], check=True, cwd=ROOT)
 
 
 def verify():
