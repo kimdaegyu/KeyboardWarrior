@@ -138,7 +138,7 @@ function PracticeRules.enter(session: Session, words: {Prompt}, sentences: {Prom
 end
 
 function PracticeRules.blockedByMatch(inMatch: boolean, phase: string?, resultDismissed: boolean?): boolean
-	return inMatch and (phase == "Play" or (phase == "Result" and not resultDismissed))
+	return inMatch and (phase == "Play" or phase == "Ready" or (phase == "Result" and not resultDismissed))
 end
 
 function PracticeRules.selfCheck(rows: {SheetRow})
@@ -148,7 +148,8 @@ function PracticeRules.selfCheck(rows: {SheetRow})
 	local first = PracticeRules.prompt(session, words, sentences)
 	assert(first ~= nil, "word practice has a prompt")
 	assert(not PracticeRules.blockedByMatch(false, "Play"), "another match does not close practice")
-	assert(PracticeRules.blockedByMatch(true, "Play") and PracticeRules.blockedByMatch(true, "Result"), "a confirmed participant leaves practice")
+	assert(PracticeRules.blockedByMatch(true, "Play") and PracticeRules.blockedByMatch(true, "Result") and PracticeRules.blockedByMatch(true, "Ready"), "a confirmed participant leaves practice")
+	assert(not PracticeRules.blockedByMatch(false, "Ready"), "a lobby player can keep practicing through the ready count")
 	assert(not PracticeRules.blockedByMatch(true, "Result", true) and PracticeRules.blockedByMatch(true, "Play", true), "closing results unlocks only the post-match HUD")
 	assert(not PracticeRules.blockedByMatch(false, "Result"), "a spectator can keep practicing through results")
 

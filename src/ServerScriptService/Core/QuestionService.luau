@@ -64,7 +64,20 @@ local QuestionService = {}
 
 local started = false
 local deck: {QuestionRules.Prompt} = {}
+local catalogRows: {QuestionRules.SheetRow} = {}
+local gradeRows: {QuestionRules.GradeRow} = {}
+type PreparedMatch = {
+	matchId: number,
+	userIds: {number},
+	startsAt: number,
+	endsAt: number,
+	order: QuestionRules.MatchOrder,
+	byUser: {[number]: string},
+	settlementId: string,
+}
+
 local round: QuestionRules.Round? = nil
+local prepared: PreparedMatch? = nil
 local names: {[number]: string} = {}
 local shownScore: {[number]: number} = {}
 local feedbackEvent: RemoteEvent? = nil
@@ -85,7 +98,9 @@ local function ensureDeck()
 	if #deck > 0 then
 		return
 	end
-	deck = QuestionRules.deckFromRows(TableData.rows("QuestionDataSheet"), TableData.rows("GradeDataSheet"))
+	catalogRows = TableData.rows("QuestionDataSheet")
+	gradeRows = TableData.rows("GradeDataSheet")
+	deck = QuestionRules.deckFromRows(catalogRows, gradeRows)
 	assert(#deck > 0, "No enabled questions")
 end
 
@@ -264,14 +279,10 @@ function QuestionService.noteClock()
 	QuestionRules.noteClock(current, Workspace:GetServerTimeNow())
 end
 
-function QuestionService.openMatch(matchId: number, userIds: {number}, endsAt: number)
-	if not started then
-		QuestionService.start()
-	end
-	ensureDeck()
-	local now = Workspace:GetServerTimeNow()
-	local settlementId = RewardRules.settlementId(settlementToken(), matchId, HttpService:GenerateGUID(false))
+local function roster(userIds: {number}): ({[number]: string}, {string})
 	local byUser: {[number]: string} = {}
+	local seenLanguage: {[string]: boolean} = {}
+	local languages: {string} = {}
 	local catalog = SettingsService.languages()
 	for _, userId in ipairs(userIds) do
 		local profile = ProfileService.read(userId)
@@ -281,23 +292,84 @@ function QuestionService.openMatch(matchId: number, userIds: {number}, endsAt: n
 			languageId = "en"
 		end
 		byUser[userId] = languageId
+		if seenLanguage[languageId] ~= true then
+			seenLanguage[languageId] = true
+			table.insert(languages, languageId)
+		end
 	end
-	round = QuestionRules.begin(deck, matchId, endsAt, userIds, now, SCORE, settlementId, byUser)
+	table.sort(languages)
+	return byUser, languages
+end
+
+function QuestionService.prepareMatch(matchId: number, userIds: {number}, startsAt: number, endsAt: number)
+	if not started then
+		QuestionService.start()
+	end
+	ensureDeck()
+	prepared = nil
+	local byUser, languages = roster(userIds)
+	local seed = QuestionRules.seedFromClock(startsAt)
+	local order, fault = QuestionRules.openOrder(catalogRows, gradeRows, languages, seed)
+	if order == nil then
+		warn("[KeyboardWarrior] match deck " .. tostring(fault))
+		return
+	end
+	prepared = {
+		matchId = matchId,
+		userIds = table.clone(userIds),
+		startsAt = startsAt,
+		endsAt = endsAt,
+		order = order,
+		byUser = byUser,
+		settlementId = RewardRules.settlementId(settlementToken(), matchId, HttpService:GenerateGUID(false)),
+	}
+end
+
+function QuestionService.dropPrepared(userId: number)
+	local pending = prepared
+	if pending == nil then
+		return
+	end
+	local kept: {number} = {}
+	for _, id in ipairs(pending.userIds) do
+		if id ~= userId then
+			table.insert(kept, id)
+		end
+	end
+	pending.userIds = kept
+	pending.byUser[userId] = nil
+end
+
+function QuestionService.revealMatch()
+	local pending = prepared
+	prepared = nil
+	if pending == nil or #pending.userIds == 0 then
+		return
+	end
+	local startedAt = pending.startsAt
+	round = QuestionRules.begin(pending.order.slots, pending.matchId, pending.endsAt, pending.userIds, startedAt, SCORE, pending.settlementId, pending.byUser, pending.order)
 	table.clear(names)
 	table.clear(shownScore)
-	for _, userId in ipairs(userIds) do
+	for _, userId in ipairs(pending.userIds) do
 		names[userId] = playerName(userId)
 	end
+	local stamp = math.max(Workspace:GetServerTimeNow(), startedAt)
 	local feedback = feedbackEvent
 	if feedback ~= nil then
-		for _, userId in ipairs(userIds) do
+		for _, userId in ipairs(pending.userIds) do
 			local player = Players:GetPlayerByUserId(userId)
 			if player ~= nil then
-				feedback:FireClient(player, QuestionRules.current(round, userId, now))
+				feedback:FireClient(player, QuestionRules.current(round, userId, stamp))
 			end
 		end
 	end
 	broadcastScores()
+end
+
+function QuestionService.openMatch(matchId: number, userIds: {number}, endsAt: number)
+	local now = Workspace:GetServerTimeNow()
+	QuestionService.prepareMatch(matchId, userIds, now, endsAt)
+	QuestionService.revealMatch()
 end
 
 function QuestionService.closeMatch(): Capture?

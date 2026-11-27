@@ -3,8 +3,10 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
+local DigitPadEffect = require(ReplicatedStorage.Shared.DigitPadEffect)
 local Localization = require(ReplicatedStorage.Shared.Localization)
 local PadLook = require(ReplicatedStorage.Shared.PadLook)
 local PracticeRules = require(ReplicatedStorage.Shared.PracticeRules)
@@ -120,14 +122,30 @@ function ShopScreen.bind(root: Frame): () -> ()
 	camera.CFrame = CFrame.new(Vector3.new(9, 7, 9), Vector3.new(0, 1, 0))
 	camera.Parent = preview
 	preview.CurrentCamera = camera
-	local pad = Instance.new("Part")
-	pad.Name = "PreviewPad"
+	local padSource = ReplicatedStorage:FindFirstChild("Pad")
+	local padTemplate = if padSource ~= nil then padSource:FindFirstChild("BasePad") else nil
+	local pad = if padTemplate ~= nil and padTemplate:IsA("BasePart") then padTemplate:Clone() else Instance.new("Part")
+	pad.Name = "BasePad"
 	pad.Anchored = true
 	pad.CanCollide = false
-	pad.Shape = Enum.PartType.Cylinder
-	pad.Size = Vector3.new(1, 6, 6)
-	pad.CFrame = CFrame.new(0, 1, 0) * CFrame.Angles(0, 0, math.rad(90))
+	pad.CanTouch = false
+	pad.CanQuery = false
+	local previewRim = pad:FindFirstChild("Out")
+	if previewRim ~= nil and previewRim:IsA("BasePart") then
+		previewRim.Anchored = true
+		previewRim.CanCollide = false
+		previewRim.CanTouch = false
+		previewRim.CanQuery = false
+	end
 	pad.Parent = world
+	local digitLayer = Instance.new("Frame")
+	digitLayer.Name = "Digits"
+	digitLayer.BackgroundTransparency = 1
+	digitLayer.BorderSizePixel = 0
+	digitLayer.ClipsDescendants = true
+	digitLayer.ZIndex = 6
+	digitLayer.Visible = false
+	digitLayer.Parent = card
 
 	local function actionButton(name: string): TextButton
 		local button = Instance.new("TextButton")
@@ -175,7 +193,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 	previewArt.Name = "ProductArt"
 	previewArt.BackgroundTransparency = 1
 	previewArt.ScaleType = Enum.ScaleType.Fit
-	previewArt.ZIndex = 6
+	previewArt.ZIndex = 7
 	previewArt.Visible = false
 	previewArt.Parent = card
 
@@ -228,6 +246,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 				enabled = true,
 				release = item.release,
 				color = item.color,
+				preset = item.preset,
 			})
 		end
 		return rows
@@ -241,6 +260,177 @@ function ShopScreen.bind(root: Frame): () -> ()
 			end
 		end
 		return nil
+	end
+
+	local previewSpin = 0
+	local emitClock = 0
+	local digitCursor = 0
+	local pointCursor = 0
+	local shownPreset = ""
+	local shownColor = Color3.fromRGB(255, 226, 114)
+	local motion: RBXScriptConnection? = nil
+	local flying: {{ label: ImageLabel, born: number, origin: Vector3, up: Vector3 }} = {}
+
+	local function clearFlying()
+		for _, fly in flying do
+			fly.label.Visible = false
+		end
+		table.clear(flying)
+	end
+
+	local function digitLabel(): ImageLabel
+		local used: {[ImageLabel]: boolean} = {}
+		for _, fly in flying do
+			used[fly.label] = true
+		end
+		for _, child in digitLayer:GetChildren() do
+			if child:IsA("ImageLabel") and not used[child] then
+				return child
+			end
+		end
+		local label = Instance.new("ImageLabel")
+		label.Name = "Digit"
+		label.BackgroundTransparency = 1
+		label.AnchorPoint = Vector2.new(0.5, 0.5)
+		label.ScaleType = Enum.ScaleType.Fit
+		label.ZIndex = 6
+		label.Parent = digitLayer
+		return label
+	end
+
+	local function frameCamera(width: number, height: number)
+		if width < 8 or height < 8 then
+			return
+		end
+		local rim = pad:FindFirstChild("Out")
+		local radius = if rim ~= nil and rim:IsA("BasePart") then math.max(rim.Size.Y, rim.Size.Z) * 0.5 else 5
+		local focus = pad.Position + Vector3.new(0, radius * 0.55, 0)
+		local direction = Vector3.new(1, 0.58, 1).Unit
+		local aspect = width / height
+		local vertical = math.rad(camera.FieldOfView)
+		local horizontal = 2 * math.atan(math.tan(vertical * 0.5) * aspect)
+		local distance = (radius * 2) / (0.65 * 2 * math.tan(horizontal * 0.5))
+		camera.CFrame = CFrame.new(focus + direction * distance, focus)
+	end
+
+	local function stepPreview(dt: number)
+		local rim = pad:FindFirstChild("Out")
+		local rimPart = if rim ~= nil and rim:IsA("BasePart") then rim else nil
+		if rimPart ~= nil then
+			previewSpin -= math.rad(constants.Floor.RimRotationSpeed) * dt
+			rimPart.CFrame = pad.CFrame * CFrame.Angles(previewSpin, 0, 0)
+		end
+		local now = os.clock()
+		local view = preview.AbsoluteSize
+		for index = #flying, 1, -1 do
+			local fly = flying[index]
+			local alpha = (now - fly.born) / DigitPadEffect.Lifetime
+			if alpha >= 1 then
+				fly.label.Visible = false
+				table.remove(flying, index)
+				continue
+			end
+			local world = fly.origin + fly.up * (DigitPadEffect.Rise * alpha)
+			local panel = DigitPadEffect.project(world, camera.CFrame, camera.FieldOfView, view)
+			if panel == nil then
+				fly.label.Visible = false
+				continue
+			end
+			fly.label.Visible = fly.label.Image ~= ""
+			fly.label.Position = UDim2.fromOffset(panel.X, panel.Y)
+			fly.label.ImageTransparency = alpha
+			local studs = if rimPart ~= nil then math.max(0.4, rimPart.Size.Y * 0.14) else 1
+			local edge = DigitPadEffect.project(world + camera.CFrame.XVector * studs, camera.CFrame, camera.FieldOfView, view)
+			local pixels = if edge ~= nil then math.max(12, (edge - panel).Magnitude) else 18
+			fly.label.Size = UDim2.fromOffset(pixels, pixels)
+		end
+		if shownPreset ~= DigitPadEffect.Id or rimPart == nil then
+			return
+		end
+		emitClock += dt
+		local interval = DigitPadEffect.interval()
+		local bursts = 0
+		while emitClock >= interval and bursts < 3 do
+			emitClock -= interval
+			bursts += 1
+			digitCursor = digitCursor % DigitPadEffect.Count + 1
+			pointCursor = pointCursor % DigitPadEffect.PointCount + 1
+			local origin = rimPart.CFrame:PointToWorldSpace(DigitPadEffect.localPoint(rimPart.Size, pointCursor))
+			local label = digitLabel()
+			local offset, rect = DigitPadEffect.cell(digitCursor)
+			label.Image = DigitPadEffect.image()
+			label.ImageColor3 = shownColor
+			label.ImageRectOffset = offset
+			label.ImageRectSize = rect
+			label.ImageTransparency = 0
+			label.Visible = label.Image ~= ""
+			table.insert(flying, {
+				label = label,
+				born = now,
+				origin = origin,
+				up = rimPart.CFrame.XVector,
+			})
+		end
+	end
+
+	local function setMotion(active: boolean)
+		digitLayer.Visible = active
+		if active then
+			if motion == nil then
+				motion = RunService.Heartbeat:Connect(stepPreview)
+			end
+			return
+		end
+		if motion ~= nil then
+			motion:Disconnect()
+			motion = nil
+		end
+		clearFlying()
+		emitClock = 0
+	end
+
+	local function paintPreview(paint: ShopRules.Paint)
+		local bodyColor = PadLook.parseColor(paint.body) or Color3.fromRGB(126, 84, 255)
+		pad.Color = bodyColor
+		pad.Material = Enum.Material.Asphalt
+		local rim = pad:FindFirstChild("Out")
+		if rim ~= nil and rim:IsA("BasePart") then
+			local rimColor = if paint.rim == "none" or paint.rim == "" then nil else PadLook.parseColor(paint.rim)
+			if rimColor ~= nil then
+				rim.Transparency = 0
+				rim.Color = rimColor
+			else
+				rim.Transparency = 1
+			end
+			local emitter = rim:FindFirstChild("ParticleEmitter")
+			local digits = paint.preset == DigitPadEffect.Id
+			local effectColor = if paint.effect == "none" or paint.effect == "" then nil else PadLook.parseColor(paint.effect)
+			if emitter ~= nil and emitter:IsA("ParticleEmitter") then
+				emitter.Enabled = effectColor ~= nil and not digits
+				if effectColor ~= nil then
+					emitter.Color = ColorSequence.new(effectColor)
+				end
+			end
+		end
+		local spark = pad:FindFirstChild("Spark")
+		if spark ~= nil then
+			spark:Destroy()
+		end
+		local motes = pad:FindFirstChild("PadEffect")
+		if motes ~= nil then
+			motes:Destroy()
+		end
+		if paint.preset ~= shownPreset then
+			shownPreset = paint.preset
+			clearFlying()
+			emitClock = 0
+			digitCursor = 0
+			pointCursor = 0
+		end
+		local nextColor = if paint.preset == DigitPadEffect.Id then PadLook.parseColor(paint.effect) else nil
+		if nextColor ~= nil then
+			shownColor = nextColor
+		end
 	end
 
 	local render: () -> ()
@@ -327,6 +517,9 @@ function ShopScreen.bind(root: Frame): () -> ()
 		list.Size = UDim2.fromOffset(plan.list, plan.body)
 		preview.Position = UDim2.fromOffset(plan.margin + plan.list + plan.gap, y)
 		preview.Size = UDim2.fromOffset(plan.preview, plan.body)
+		digitLayer.Position = preview.Position
+		digitLayer.Size = preview.Size
+		frameCamera(plan.preview, plan.body)
 		previewArt.Position = UDim2.fromOffset(plan.margin + plan.list + plan.gap + 8, y + 8)
 		previewArt.Size = UDim2.fromOffset(math.min(64, math.max(0, plan.preview - 16)), math.min(64, math.max(0, plan.body - 16)))
 		for _, button in cards do
@@ -479,7 +672,8 @@ function ShopScreen.bind(root: Frame): () -> ()
 		else
 			previewArt.Visible = false
 		end
-		PadLook.apply(pad, ShopRules.preview(catalog(), draft.body, draft.rim, draft.effect))
+		paintPreview(ShopRules.preview(catalog(), draft.body, draft.rim, draft.effect))
+		setMotion(screen.Visible and not titlesOpen)
 		titlePanel.Visible = titlesOpen
 		list.Visible = not titlesOpen
 		preview.Visible = not titlesOpen
@@ -541,6 +735,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 			touched = false
 			screen.Visible = false
 			root:SetAttribute("ShopOpen", false)
+			setMotion(false)
 			return
 		end
 		if open and not shown then
@@ -553,6 +748,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 		if not open then
 			shown = false
 			touched = false
+			setMotion(false)
 		end
 		screen.Visible = open
 		if open then
@@ -643,6 +839,7 @@ function ShopScreen.bind(root: Frame): () -> ()
 		for _, connection in connections do
 			connection:Disconnect()
 		end
+		setMotion(false)
 		stopShop()
 		stopLocale()
 		stopTitles()

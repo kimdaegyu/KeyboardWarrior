@@ -88,6 +88,7 @@ local function payload(userId: number, reason: string)
 				price = item.price,
 				release = item.release,
 				color = item.color,
+				preset = item.preset,
 				currency = item.currency,
 				score = scoreFor[item.id],
 				owned = has,

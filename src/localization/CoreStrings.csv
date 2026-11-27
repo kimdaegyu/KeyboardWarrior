@@ -6,11 +6,13 @@ Lobby.FriendBoost,Friend boost +{percent}%,,,친구 부스터 +{percent}%,フレ
 Lobby.PhasePlay,Match,,,대결,対戦,Laga,Trận đấu,แข่ง,मैच,Partida,Partida
 Lobby.PhaseResult,Results,,,결산,結果,Hasil,Kết quả,สรุปผล,परिणाम,Resultados,Resultados
 Lobby.PhaseRest,Break,,,휴식,休憩,Istirahat,Nghỉ,พัก,विराम,Descanso,Pausa
+Lobby.PhaseReady,Ready,,,준비,準備,Siap,Sẵn sàng,พร้อม,तैयार,Listo,Pronto
 Lobby.Waiting,Waiting to join,,,참가 대기,参加待ち,Menunggu masuk,Đang chờ vào,รอเข้าร่วม,प्रवेश की प्रतीक्षा,Esperando entrar,Aguardando entrar
 Lobby.NotWaiting,Not waiting,,,대기 아님,待機なし,Tidak menunggu,Không chờ,ไม่ได้รอ,प्रतीक्षा में नहीं,Sin espera,Sem espera
 Lobby.Queue,Waiting {count}/{capacity},,,대기 인원 {count}/{capacity},待機 {count}/{capacity},Menunggu {count}/{capacity},Đang chờ {count}/{capacity},รอ {count}/{capacity},प्रतीक्षा {count}/{capacity},En espera {count}/{capacity},Na espera {count}/{capacity}
 Lobby.TimeLeft,Time left {time},,,남은 시간 {time},残り {time},Sisa {time},Còn {time},เหลือ {time},शेष {time},Tiempo {time},Tempo {time}
 Match.TypeHere,Type here,,,여기에 입력,ここに入力,Ketik di sini,Nhập tại đây,พิมพ์ที่นี่,यहाँ टाइप करें,Escribe aquí,Digite aqui
+Match.StartCall,START!,,,START!,START!,START!,START!,START!,START!,START!,START!
 Match.Space,Space,,,스페이스,スペース,Spasi,Cách,เว้นวรรค,स्पेस,Espacio,Espaço
 Match.Backspace,Backspace,,,지우기,削除,Hapus,Xóa,ลบ,मिटाएँ,Borrar,Apagar
 Match.Enter,Enter,,,입력,入力,Enter,Nhập,ยืนยัน,दर्ज,Enter,Enter
@@ -126,6 +128,11 @@ Rank.Outside,Outside top {count},,,상위 {count}위 밖,上位{count}位圏外,
 Match.CpmValue,{value} CPM,,,{value}타/분,{value} 打/分,{value} CPM,{value} CPM,{value} CPM,{value} CPM,{value} CPM,{value} CPM
 Rank.Language,Language,,,언어,言語,Bahasa,Ngôn ngữ,ภาษา,भाषा,Idioma,Idioma
 Rank.Cpm,CPM,,,분당타수,打鍵/分,CPM,CPM,CPM,CPM,CPM,CPM
+Rank.Board.Title,Global ranking TOP 10,,,글로벌 랭킹 TOP 10,,,,,,,
+Rank.Board.Face,Face,,,얼굴,,,,,,,
+Rank.Board.Name,Name,,,닉네임,,,,,,,
+Rank.Board.Loading,Loading ranks,,,랭킹 불러오는 중,,,,,,,
+Rank.Board.Empty,No records yet,,,아직 등록된 기록이 없습니다,,,,,,,
 Achievement.Title1,Key Rookie,,,타자 새내기,,,,,,,
 Achievement.Title2,Word Runner,,,단어 질주자,,,,,,,
 Achievement.Title3,Quick Fingers,,,쾌속 타자,,,,,,,
@@ -170,4 +177,15 @@ Shop.Name.effect_sapphire,Sapphire Spark,,,사파이어 불꽃,,,,,,,
 Shop.Name.effect_violet,Violet Spark,,,제비꽃 불꽃,,,,,,,
 Shop.Name.effect_rose,Rose Spark,,,장미 불꽃,,,,,,,
 Shop.Name.effect_silver,Silver Spark,,,은빛 불꽃,,,,,,,
-Shop.Name.effect_sun_gold,Sun Gold Spark,,,태양빛 불꽃,,,,,,,
+Shop.Name.effect_sun_gold,Golden Digits,,,금빛 숫자,,,,,,,
+Cheat.Window,Cheat,,,치트,,,,,,,
+Cheat.Reset,Reset all data,,,모든 데이터 초기화,,,,,,,
+Cheat.Gold,Change gold,,,골드 변경,,,,,,,
+Cheat.Param1,Parameter 1,,,파라미터1,,,,,,,
+Cheat.Param2,Parameter 2,,,파라미터2,,,,,,,
+Cheat.Run,Run,,,실행,,,,,,,
+Cheat.Unused,Unused,,,사용 안 함,,,,,,,
+Cheat.Done,Done,,,완료,,,,,,,
+Cheat.Invalid,Check the value,,,값을 확인해 주세요,,,,,,,
+Cheat.Failed,Failed,,,실패,,,,,,,
+Cheat.Unavailable,Profile is not open,,,프로필을 열 수 없습니다,,,,,,,

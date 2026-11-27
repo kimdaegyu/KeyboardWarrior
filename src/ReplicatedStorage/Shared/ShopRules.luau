@@ -3,6 +3,7 @@
 -- Achievement rims are granted by a title and are not sold.
 
 local TitleRules = if script then require(script.Parent.TitleRules) else require("./TitleRules")
+local DigitPadEffect = if script then require(script.Parent.DigitPadEffect) else require("./DigitPadEffect")
 
 export type Row = {
 	Id: string,
@@ -13,6 +14,7 @@ export type Row = {
 	Enabled: string,
 	Release: string,
 	Color: string,
+	EffectPresetId: string?,
 }
 
 export type Item = {
@@ -24,6 +26,7 @@ export type Item = {
 	enabled: boolean,
 	release: string,
 	color: string,
+	preset: string,
 }
 
 export type Profile = {
@@ -62,6 +65,7 @@ export type Paint = {
 	body: string,
 	rim: string,
 	effect: string,
+	preset: string,
 }
 
 local ShopRules = {}
@@ -201,6 +205,10 @@ function ShopRules.catalog(rows: {Row}): ({Item}?, string)
 		if enabled and row.Currency == "Robux" and row.PlatformProductId == "" then
 			return nil, "product"
 		end
+		local preset = if type(row.EffectPresetId) == "string" then row.EffectPresetId else ""
+		if preset ~= "" and preset ~= DigitPadEffect.Id then
+			return nil, "preset"
+		end
 		table.insert(items, {
 			id = row.Id,
 			category = row.Category,
@@ -210,6 +218,7 @@ function ShopRules.catalog(rows: {Row}): ({Item}?, string)
 			enabled = enabled,
 			release = row.Release,
 			color = color,
+			preset = preset,
 		})
 	end
 	for _, category in { "Body", "Rim", "Effect" } do
@@ -298,17 +307,21 @@ function ShopRules.loadout(items: {Item}, profile: Profile?): Loadout
 end
 
 function ShopRules.preview(items: {Item}, bodyId: string, rimId: string, effectId: string): Paint
-	local function token(id: string, category: string, plain: string): string
+	local function token(id: string, category: string, plain: string): (string, string)
 		local item = ShopRules.find(items, id)
 		if item == nil or item.category ~= category or not item.enabled or HIDDEN[item.id] then
-			return plain
+			return plain, ""
 		end
-		return item.color
+		return item.color, item.preset
 	end
+	local bodyColor = token(bodyId, "Body", "126;84;255")
+	local rimColor = token(rimId, "Rim", "none")
+	local effectColor, effectPreset = token(effectId, "Effect", "none")
 	return {
-		body = token(bodyId, "Body", "126;84;255"),
-		rim = token(rimId, "Rim", "none"),
-		effect = token(effectId, "Effect", "none"),
+		body = bodyColor,
+		rim = rimColor,
+		effect = effectColor,
+		preset = effectPreset,
 	}
 end
 
@@ -359,7 +372,7 @@ function ShopRules.equip(profile: Profile, item: Item?): (Profile, string)
 end
 
 function ShopRules.selfCheck()
-	local function row(id: string, category: string, price: string, release: string, color: string, currency: string?): Row
+	local function row(id: string, category: string, price: string, release: string, color: string, currency: string?, preset: string?): Row
 		return {
 			Id = id,
 			Category = category,
@@ -369,6 +382,7 @@ function ShopRules.selfCheck()
 			Enabled = "1",
 			Release = release,
 			Color = color,
+			EffectPresetId = preset,
 		}
 	end
 	local items, reason = ShopRules.catalog({
@@ -426,7 +440,31 @@ function ShopRules.selfCheck()
 	local blocked, blockedReason = ShopRules.purchase(fresh, titleRim, true)
 	assert(blockedReason == "closed" and blocked.gold == 51, "an achievement rim cannot be bought")
 	local colors = ShopRules.preview(live, "starter_body", "ink_rim", "starter_effect")
-	assert(colors.rim == "0;0;0" and ShopRules.preview(live, "starter_body", "starter_rim", "starter_effect").rim == "none", "only the starter rim stays hidden")
+	assert(colors.rim == "0;0;0" and colors.preset == "" and ShopRules.preview(live, "starter_body", "starter_rim", "starter_effect").rim == "none", "only the starter rim stays hidden")
+	local digits, digitsReason = ShopRules.catalog({
+		row("starter_body", "Body", "0", "Default", "126;84;255"),
+		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
+		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
+		row("effect_coral", "Effect", "150", "Live", "255;139;126"),
+		row("effect_sun_gold", "Effect", "2250", "Live", "255;226;114", nil, "digits"),
+	})
+	assert(digitsReason == "ok" and digits ~= nil, "an empty preset stays on the existing effect")
+	local digitItems = digits :: {Item}
+	local goldPreview = ShopRules.preview(digitItems, "starter_body", "starter_rim", "effect_sun_gold")
+	local coralPreview = ShopRules.preview(digitItems, "starter_body", "starter_rim", "effect_coral")
+	local barePreview = ShopRules.preview(digitItems, "starter_body", "starter_rim", "starter_effect")
+	assert(goldPreview.effect == "255;226;114" and goldPreview.preset == "digits", "the golden digits preset follows the equipped effect id")
+	assert(coralPreview.effect == "255;139;126" and coralPreview.preset == "", "a blank preset keeps the existing emitter")
+	assert(barePreview.effect == "none" and barePreview.preset == "", "the default effect emits nothing")
+	local wornDigits: Profile = { schemaVersion = 1, gold = 0, exp = 0, bestScore = 0, owned = { "effect_sun_gold" }, effect = "effect_sun_gold" }
+	assert(ShopRules.paint(digitItems, wornDigits).preset == "digits" and wornDigits.effect == "effect_sun_gold", "equip still stores the product id")
+	local rejected = ShopRules.catalog({
+		row("starter_body", "Body", "0", "Default", "126;84;255"),
+		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
+		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
+		row("effect_bad", "Effect", "10", "Live", "1;2;3", nil, "missing"),
+	})
+	assert(rejected == nil, "an unknown preset is rejected")
 	local badColor = ShopRules.catalog({
 		row("starter_body", "Body", "0", "Default", "256;0;0"),
 		row("starter_rim", "Rim", "0", "Default", "0;0;0"),

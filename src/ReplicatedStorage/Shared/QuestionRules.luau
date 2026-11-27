@@ -14,6 +14,9 @@ export type SheetRow = {
 	Score: string?,
 	GradeId: string?,
 	Kind: string?,
+	Category: string?,
+	RankEligible: string?,
+	Revision: string?,
 }
 
 export type GradeRow = {
@@ -29,6 +32,22 @@ export type Prompt = {
 	gradeId: string,
 	colorHex: string,
 	kind: string,
+	category: string?,
+	revision: string?,
+}
+
+export type MatchOrder = {
+	seed: number,
+	dataVersion: string,
+	languages: {string},
+	sentenceStart: number,
+	sources: {[string]: {Prompt}},
+	pools: {[string]: {Prompt}},
+	nextIndex: {[string]: number},
+	lastId: {[string]: string},
+	slots: {Prompt},
+	roll: (number) -> number,
+	fault: string?,
 }
 
 export type ScoreConfig = {
@@ -93,6 +112,10 @@ export type Round = {
 	startedAt: number,
 	scoreConfig: ScoreConfig,
 	deck: {Prompt},
+	order: MatchOrder?,
+	seed: number?,
+	dataVersion: string?,
+	languages: {string}?,
 	solvers: {[number]: Solver},
 	departed: {[number]: Departure},
 	finalOrder: {Standing}?,
@@ -151,7 +174,7 @@ function QuestionRules.multiplierFor(remain: number, config: ScoreConfig): numbe
 end
 
 function QuestionRules.clientMatchId(phase: string?, inMatch: boolean, matchId: number?): number
-	if phase ~= "Play" or inMatch ~= true then
+	if inMatch ~= true or (phase ~= "Play" and phase ~= "Ready") then
 		return 0
 	end
 	if type(matchId) ~= "number" or matchId <= 0 then
@@ -203,6 +226,210 @@ function QuestionRules.deckFromRows(rows: {SheetRow}, grades: {GradeRow}?, langu
 		end
 	end
 	return table.freeze(deck)
+end
+
+local MATCH_CATEGORIES = { "Essential", "Daily", "Growth", "Proverb" }
+local SENTENCE_CYCLE = { "Daily", "Growth", "Daily", "Proverb" }
+
+function QuestionRules.seedFromClock(startedAt: number): number
+	if type(startedAt) ~= "number" or startedAt ~= startedAt or startedAt < 0 then
+		return 1
+	end
+	local seed = math.floor(startedAt * 1000) % 2147483646
+	if seed < 1 then
+		return 1
+	end
+	return seed
+end
+
+function QuestionRules.dataVersion(rows: {SheetRow}): string
+	local hash = 2166136261
+	local function mix(text: string)
+		for index = 1, #text do
+			hash = (hash + string.byte(text, index)) % 4294967296
+			hash = (hash * 16777619) % 4294967296
+		end
+		hash = (hash + 10) % 4294967296
+	end
+	for _, row in rows do
+		mix(row.Id)
+		mix(row.Enabled)
+		mix(row.RankEligible or "")
+		mix(row.Category or "")
+		mix(row.Revision or "")
+		mix(row.en)
+		mix(row.ko or "")
+	end
+	return string.format("%08x", hash)
+end
+
+local function gradeColors(grades: {GradeRow}?): {[string]: string}
+	local colors: {[string]: string} = {}
+	if grades ~= nil then
+		for _, grade in grades do
+			colors[grade.Id] = grade.ColorHex
+		end
+	end
+	return colors
+end
+
+local function promptFromRow(row: SheetRow, colors: {[string]: string}, languages: {string}): Prompt
+	local gradeId = row.GradeId or ""
+	local parsed = tonumber(row.Score)
+	local texts: {[string]: string} = {}
+	for _, name in languages do
+		local value = columnText(row, name)
+		if value ~= "" then
+			texts[name] = value
+		end
+	end
+	if texts.en == nil and row.en ~= "" then
+		texts.en = row.en
+	end
+	if texts.ko == nil and type(row.ko) == "string" and row.ko ~= "" then
+		texts.ko = row.ko
+	end
+	local shown = if row.en ~= "" then row.en else (texts[languages[1]] or "")
+	return table.freeze({
+		id = row.Id,
+		text = shown,
+		texts = texts,
+		score = if type(parsed) == "number" then parsed else 0,
+		gradeId = gradeId,
+		colorHex = colors[gradeId] or "#FFFFFF",
+		kind = if row.Kind == "Sentence" then "Sentence" else "Word",
+		category = row.Category,
+		revision = if type(row.Revision) == "string" then row.Revision else "",
+	})
+end
+
+local function makeRoll(seed: number): (number) -> number
+	local state = seed % 2147483647
+	if state <= 0 then
+		state = 1
+	end
+	return function(span: number): number
+		state = (state * 48271) % 2147483647
+		return (state % span) + 1
+	end
+end
+
+local function shuffleCopy(source: {Prompt}, roll: (number) -> number): {Prompt}
+	local copy: {Prompt} = table.create(#source)
+	for index, prompt in source do
+		copy[index] = prompt
+	end
+	for index = #copy, 2, -1 do
+		local swap = roll(index)
+		copy[index], copy[swap] = copy[swap], copy[index]
+	end
+	return copy
+end
+
+local function languageKey(languages: {string}): string
+	return table.concat(languages, ",")
+end
+
+local function refill(order: MatchOrder, category: string, avoidLast: boolean): boolean
+	local source = order.sources[category]
+	if source == nil or #source == 0 then
+		order.fault = category .. ":" .. languageKey(order.languages)
+		return false
+	end
+	local pool = shuffleCopy(source, order.roll)
+	if avoidLast and #pool >= 2 and pool[1].id == order.lastId[category] then
+		pool[1], pool[2] = pool[2], pool[1]
+	end
+	order.pools[category] = pool
+	order.nextIndex[category] = 1
+	return true
+end
+
+local function take(order: MatchOrder, category: string): Prompt?
+	if order.fault ~= nil then
+		return nil
+	end
+	local pool = order.pools[category]
+	local index = order.nextIndex[category]
+	if pool == nil or index == nil or index > #pool then
+		if not refill(order, category, pool ~= nil) then
+			return nil
+		end
+		pool = order.pools[category]
+		index = 1
+	end
+	local prompt = pool[index]
+	order.nextIndex[category] = index + 1
+	order.lastId[category] = prompt.id
+	return prompt
+end
+
+function QuestionRules.openOrder(rows: {SheetRow}, grades: {GradeRow}?, languages: {string}, seed: number): (MatchOrder?, string?)
+	local colors = gradeColors(grades)
+	local sources: {[string]: {Prompt}} = {
+		Essential = {},
+		Daily = {},
+		Growth = {},
+		Proverb = {},
+	}
+	for _, row in rows do
+		local category = row.Category
+		if row.Enabled == "1" and row.Id ~= "" and row.RankEligible == "1" and type(category) == "string" and sources[category] ~= nil then
+			local ready = true
+			for _, language in languages do
+				if columnText(row, language) == "" then
+					ready = false
+					break
+				end
+			end
+			if ready then
+				table.insert(sources[category], promptFromRow(row, colors, languages))
+			end
+		end
+	end
+	for _, category in MATCH_CATEGORIES do
+		if #sources[category] == 0 then
+			return nil, category .. ":" .. languageKey(languages)
+		end
+	end
+	local order: MatchOrder = {
+		seed = seed,
+		dataVersion = QuestionRules.dataVersion(rows),
+		languages = table.clone(languages),
+		sentenceStart = 0,
+		sources = sources,
+		pools = {},
+		nextIndex = {},
+		lastId = {},
+		slots = {},
+		roll = makeRoll(seed),
+		fault = nil,
+	}
+	for _, category in MATCH_CATEGORIES do
+		refill(order, category, false)
+	end
+	order.sentenceStart = order.roll(4) - 1
+	return order, nil
+end
+
+function QuestionRules.ensureSlot(order: MatchOrder, slot: number): Prompt?
+	if order.fault ~= nil or slot < 1 then
+		return nil
+	end
+	while #order.slots < slot do
+		local nextSlot = #order.slots + 1
+		local category = "Essential"
+		if nextSlot % 5 == 0 then
+			local step = math.floor(nextSlot / 5) - 1
+			category = SENTENCE_CYCLE[(order.sentenceStart + step) % 4 + 1]
+		end
+		local prompt = take(order, category)
+		if prompt == nil then
+			return nil
+		end
+		order.slots[nextSlot] = prompt
+	end
+	return order.slots[slot]
 end
 
 function QuestionRules.matches(input: string, answer: string): boolean
@@ -389,12 +616,19 @@ function QuestionRules.missingText(rows: {SheetRow}, languageIds: {string}): (st
 	return nil, nil
 end
 
-local function promptAt(deck: {Prompt}, index: number): Prompt
-	local count = #deck
-	return deck[(index - 1) % count + 1]
+local function promptFor(round: Round, index: number): Prompt?
+	local order = round.order
+	if order ~= nil then
+		return QuestionRules.ensureSlot(order, index)
+	end
+	local count = #round.deck
+	if count == 0 then
+		return nil
+	end
+	return round.deck[(index - 1) % count + 1]
 end
 
-function QuestionRules.begin(deck: {Prompt}, matchId: number, endsAt: number, userIds: {number}, now: number?, config: ScoreConfig?, settlementId: string?, byUser: {[number]: string}?): Round
+function QuestionRules.begin(deck: {Prompt}, matchId: number, endsAt: number, userIds: {number}, now: number?, config: ScoreConfig?, settlementId: string?, byUser: {[number]: string}?, order: MatchOrder?): Round
 	local startedAt = if type(now) == "number" then now else 0
 	local scoreConfig = config or DEFAULT_SCORE
 	local multiplier = QuestionRules.multiplierFor(endsAt - startedAt, scoreConfig)
@@ -425,15 +659,19 @@ function QuestionRules.begin(deck: {Prompt}, matchId: number, endsAt: number, us
 		sealed = false,
 		startedAt = startedAt,
 		scoreConfig = scoreConfig,
-		deck = deck,
+		deck = if order ~= nil then order.slots else deck,
+		order = order,
+		seed = if order ~= nil then order.seed else nil,
+		dataVersion = if order ~= nil then order.dataVersion else nil,
+		languages = if order ~= nil then order.languages else nil,
 		solvers = solvers,
 		departed = {},
 		metrics = PlaytestMetrics.begin(),
 	}
 	for userId, solver in solvers do
-		if #deck > 0 then
-			local prompt = promptAt(deck, solver.index)
-			PlaytestMetrics.issue(round.metrics, matchId, userId, prompt.id, solver.issue, prompt.kind, solver.language, solver.multiplier, startedAt)
+		local prompt = promptFor(round, solver.index)
+		if prompt ~= nil then
+			PlaytestMetrics.issue(round.metrics, matchId, userId, prompt.id, solver.issue, prompt.kind, solver.language, solver.multiplier, startedAt, prompt.revision)
 		end
 	end
 	return round
@@ -579,11 +817,21 @@ local function closed(round: Round?): Message
 end
 
 local function live(round: Round, now: number): boolean
-	return round.open and now < round.endsAt and #round.deck > 0
+	if not round.open or now >= round.endsAt or now < round.startedAt then
+		return false
+	end
+	if round.order ~= nil then
+		return round.order.fault == nil and QuestionRules.ensureSlot(round.order, 1) ~= nil
+	end
+	return #round.deck > 0
 end
 
-local function stateMessage(round: Round, solver: Solver): Message
-	local prompt = promptAt(round.deck, solver.index)
+local function stateMessage(round: Round, solver: Solver): Message?
+	local prompt = promptFor(round, solver.index)
+	if prompt == nil then
+		round.open = false
+		return nil
+	end
 	return {
 		ok = true,
 		matchId = round.matchId,
@@ -629,10 +877,16 @@ function QuestionRules.current(round: Round?, userId: number, now: number): Mess
 			matchId = round.matchId,
 		}
 	end
-	local prompt = promptAt(round.deck, solver.index)
-	PlaytestMetrics.issue(round.metrics, round.matchId, userId, prompt.id, solver.issue, prompt.kind, solver.language, solver.multiplier, now)
+	local message = stateMessage(round, solver)
+	if message == nil then
+		return closed(round)
+	end
+	local prompt = promptFor(round, solver.index)
+	if prompt ~= nil then
+		PlaytestMetrics.issue(round.metrics, round.matchId, userId, prompt.id, solver.issue, prompt.kind, solver.language, solver.multiplier, now, prompt.revision)
+	end
 	QuestionRules.noteClock(round, now)
-	return stateMessage(round, solver)
+	return message
 end
 
 function QuestionRules.submit(round: Round?, userId: number, matchId: number, issue: number, text: string, now: number, method: any): Message
@@ -670,7 +924,11 @@ function QuestionRules.submit(round: Round?, userId: number, matchId: number, is
 			issue = solver.issue,
 		}
 	end
-	local prompt = promptAt(round.deck, solver.index)
+	local prompt = promptFor(round, solver.index)
+	if prompt == nil then
+		round.open = false
+		return closed(round)
+	end
 	local answer = QuestionRules.textFor(prompt, solver.language)
 	if not QuestionRules.matches(text, answer) then
 		return {
@@ -700,7 +958,18 @@ function QuestionRules.submit(round: Round?, userId: number, matchId: number, is
 	solver.lastTotal = solver.score
 	solver.issue += 1
 	solver.index += 1
-	local nextPrompt = promptAt(round.deck, solver.index)
+	local nextPrompt = promptFor(round, solver.index)
+	if nextPrompt == nil then
+		round.open = false
+		solver.lastNextIssue = nil
+		solver.lastNextId = nil
+		solver.lastNextText = nil
+		solver.lastNextScore = nil
+		solver.lastNextPoints = nil
+		solver.lastNextMultiplier = nil
+		solver.lastNextColor = nil
+		return echoMessage(round, solver, true)
+	end
 	solver.multiplier = QuestionRules.multiplierFor(round.endsAt - now, round.scoreConfig)
 	solver.lastNextIssue = solver.issue
 	solver.lastNextId = nextPrompt.id
@@ -709,7 +978,7 @@ function QuestionRules.submit(round: Round?, userId: number, matchId: number, is
 	solver.lastNextPoints = nextPrompt.score * solver.multiplier
 	solver.lastNextMultiplier = solver.multiplier
 	solver.lastNextColor = nextPrompt.colorHex
-	PlaytestMetrics.issue(round.metrics, round.matchId, userId, nextPrompt.id, solver.issue, nextPrompt.kind, solver.language, solver.multiplier, now)
+	PlaytestMetrics.issue(round.metrics, round.matchId, userId, nextPrompt.id, solver.issue, nextPrompt.kind, solver.language, solver.multiplier, now, nextPrompt.revision)
 	return echoMessage(round, solver, true)
 end
 
@@ -783,9 +1052,16 @@ function QuestionRules.selfCheck(rows: {SheetRow}, grades: {GradeRow}?)
 	assert(not QuestionRules.continuesAnswer("bal", "ball", "banana"), "ignore stale answer on an unrelated prompt")
 
 	assert(QuestionRules.clientMatchId("Play", true, 4) == 4)
+	assert(QuestionRules.clientMatchId("Ready", true, 4) == 4, "ready keeps the participant on the match screen")
+	assert(QuestionRules.clientMatchId("Ready", false, 4) == 0, "a lobby player does not see the ready sheet")
 	assert(QuestionRules.clientMatchId("Result", true, 4) == 0, "result closes the typing screen")
 	assert(QuestionRules.clientMatchId("Play", false, 4) == 0, "lobby players stay on the lobby HUD")
 	assert(QuestionRules.clientMatchId("Play", true, 0) == 0)
+	local early = QuestionRules.begin({
+		{ id = "1", text = "river", score = 10, gradeId = "1", colorHex = "#fff", kind = "word" },
+	}, 9, 220, { 4 }, 100)
+	local earlyMessage = QuestionRules.submit(early, 4, 9, 1, "river", 99, "keyboard")
+	assert(earlyMessage.ok ~= true and earlyMessage.reason == "closed", "a submit before the start is refused")
 	assert(QuestionRules.acceptEnter(false, "look out"), "a completed draft can be submitted")
 	assert(not QuestionRules.acceptEnter(true, "look out"), "Enter after an auto-correct does not submit again")
 	assert(not QuestionRules.acceptEnter(false, ""), "Enter on an empty next draft does not advance")
@@ -1111,6 +1387,174 @@ function QuestionRules.selfCheck(rows: {SheetRow}, grades: {GradeRow}?)
 	assert(pairOrder[1].score == pairOrder[2].score and pairOrder[1].score == 10, "the two languages share the score rule")
 	QuestionRules.forget(pair, 2)
 	assert(pair.departed[2] ~= nil and pair.departed[2].language == "ko", "a departure keeps the language used in this match")
+
+	local sheetHead = if rows[1] ~= nil then rows[1].Id else ""
+	local sheetNext = if rows[2] ~= nil then rows[2].Id else ""
+	local function blockCounts(order: MatchOrder, blockStart: number)
+		local counts = { Essential = 0, Daily = 0, Growth = 0, Proverb = 0 }
+		for offset = 0, 19 do
+			local prompt = order.slots[blockStart + offset]
+			local category = prompt.category or ""
+			counts[category] += 1
+			if (offset + 1) % 5 == 0 then
+				assert(category ~= "Essential", "sentence slots stay off the essential list")
+			else
+				assert(category == "Essential", "four word slots come from essential")
+			end
+		end
+		assert(counts.Essential == 16 and counts.Daily == 2 and counts.Growth == 1 and counts.Proverb == 1, "every 20 questions are 16/2/1/1")
+	end
+	local seedForStart: {[number]: number} = {}
+	for seed = 1, 80 do
+		local probed, probeFault = QuestionRules.openOrder(rows, grades, { "en", "ko" }, seed)
+		assert(probed ~= nil, probeFault)
+		if probed ~= nil and seedForStart[probed.sentenceStart] == nil then
+			seedForStart[probed.sentenceStart] = seed
+		end
+	end
+	for start = 0, 3 do
+		local seed = seedForStart[start]
+		assert(seed ~= nil, "each sentence start index is reachable")
+		local started = QuestionRules.openOrder(rows, grades, { "en", "ko" }, seed :: number)
+		assert(started ~= nil and started.sentenceStart == start, "the stored start index is the one that was drawn")
+		if started ~= nil then
+			assert(QuestionRules.ensureSlot(started, 520) ~= nil, "520 slots stay available")
+			for block = 0, 25 do
+				blockCounts(started, block * 20 + 1)
+			end
+		end
+	end
+	local fixedSeed = 48271
+	local left = QuestionRules.openOrder(rows, grades, { "en", "ko" }, fixedSeed)
+	local right = QuestionRules.openOrder(rows, grades, { "en", "ko" }, fixedSeed)
+	assert(left ~= nil and right ~= nil and left.dataVersion == right.dataVersion, "one catalog has one data version")
+	if left ~= nil and right ~= nil then
+		assert(QuestionRules.ensureSlot(left, 520) ~= nil and QuestionRules.ensureSlot(right, 520) ~= nil)
+		for index = 1, 520 do
+			assert(left.slots[index].id == right.slots[index].id, "the same seed repeats the first 520 ids")
+		end
+		local proverbIds: {string} = {}
+		local usedProverb: {[string]: boolean} = {}
+		for index = 1, 520 do
+			if left.slots[index].category == "Proverb" then
+				table.insert(proverbIds, left.slots[index].id)
+			end
+		end
+		assert(#proverbIds == 26, "520 questions contain 26 proverbs")
+		for index = 1, 25 do
+			assert(usedProverb[proverbIds[index]] ~= true, "a proverb is not repeated before its list is exhausted")
+			usedProverb[proverbIds[index]] = true
+		end
+		assert(proverbIds[26] ~= proverbIds[25], "the reshuffled proverb list does not start with the previous last id")
+		local sourceId = left.sources.Essential[1].id
+		assert(left.sources.Essential[1].id == sourceId and rows[1].Id == sheetHead and rows[2].Id == sheetNext, "shuffling does not rewrite the shared catalog")
+		local shared = QuestionRules.openOrder(rows, grades, { "en", "ko" }, fixedSeed)
+		assert(shared ~= nil)
+		if shared ~= nil then
+			local match = QuestionRules.begin(shared.slots, 30, 10000, { 1, 2 }, 0, scoreConfig, "deck", { [1] = "en", [2] = "ko" }, shared)
+			local function advance(userId: number, steps: number, now: number, method: string)
+				for _ = 1, steps do
+					local card = QuestionRules.current(match, userId, now)
+					assert(card.ok and card.issue ~= nil and card.text ~= nil)
+					local done = QuestionRules.submit(match, userId, 30, card.issue :: number, card.text :: string, now, method)
+					assert(done.awarded == true)
+				end
+			end
+			advance(1, 19, 10, "keyboard")
+			local english = QuestionRules.current(match, 1, 10)
+			local reread = QuestionRules.current(match, 1, 12)
+			assert(english.issue == 20 and reread.questionId == english.questionId and reread.points == english.points and reread.score == english.score, "a repeated request keeps the issued id and points")
+			advance(2, 7, 11, "touch")
+			assert(QuestionRules.current(match, 2, 11).issue == 8, "the slower player keeps an earlier slot")
+			advance(2, 12, 11, "touch")
+			local korean = QuestionRules.current(match, 2, 11)
+			assert(korean.issue == 20 and korean.questionId == english.questionId and korean.points == english.points, "English and Korean players share the 20th id")
+			local englishSample = match.metrics.samples["1:1"]
+			local koreanSample = match.metrics.samples["2:1"]
+			assert(englishSample.questionId == koreanSample.questionId and englishSample.revision == koreanSample.revision and englishSample.revision ~= "", "language times share the question id and revision")
+			assert(englishSample.elapsed ~= koreanSample.elapsed and englishSample.method == "keyboard" and koreanSample.method == "touch")
+			local report = PlaytestMetrics.report(match)
+			assert(string.find(report, "개정 " .. englishSample.revision, 1, true) ~= nil, "the summary can compare languages inside one revision")
+			assert(string.find(report, "시드 " .. tostring(shared.seed), 1, true) ~= nil and string.find(report, shared.dataVersion, 1, true) ~= nil, "the match record keeps the seed and data version")
+			local other = QuestionRules.openOrder(rows, grades, { "en", "ko" }, fixedSeed + 1)
+			assert(other ~= nil and other.seed ~= match.seed and other.slots ~= shared.slots)
+			if other ~= nil then
+				local nextRound = QuestionRules.begin(other.slots, 31, 10000, { 1 }, 0, scoreConfig, "next", { [1] = "en" }, other)
+				assert(nextRound.solvers[1].issue == 1 and match.solvers[1].issue == 20, "the next match does not continue the previous deck")
+			end
+		end
+	end
+	assert(QuestionRules.seedFromClock(10) == QuestionRules.seedFromClock(10) and QuestionRules.seedFromClock(10) ~= QuestionRules.seedFromClock(11), "the clock seed is separate from deck building")
+	local function sampleRow(id: string, category: string, eligible: string, en: string, ko: string, enabled: string?): SheetRow
+		return {
+			Id = id,
+			Kind = if category == "Essential" then "Word" else "Sentence",
+			GradeId = "Basic",
+			Score = "10",
+			Enabled = if enabled == nil then "1" else enabled,
+			en = en,
+			ko = ko,
+			Category = category,
+			RankEligible = eligible,
+			Revision = "4",
+		}
+	end
+	local function baseRows(): {SheetRow}
+		return {
+			sampleRow("keep", "Essential", "1", "river", "강"),
+			sampleRow("day", "Daily", "1", "good day", "좋은 날"),
+			sampleRow("grow", "Growth", "1", "keep going", "계속 가자"),
+		}
+	end
+	local emptyOrder, emptyFault = QuestionRules.openOrder(baseRows(), grades, { "en", "ko" }, 3)
+	assert(emptyOrder == nil and emptyFault == "Proverb:en,ko", "an empty category names itself and the languages")
+	local one = baseRows()
+	table.insert(one, sampleRow("only-proverb", "Proverb", "1", "look ahead", "앞을 봐"))
+	local single = QuestionRules.openOrder(one, grades, { "en", "ko" }, 5)
+	assert(single ~= nil and QuestionRules.ensureSlot(single :: MatchOrder, 60) ~= nil)
+	if single ~= nil then
+		local repeated: {string} = {}
+		for index = 1, 60 do
+			if single.slots[index].category == "Proverb" then
+				table.insert(repeated, single.slots[index].id)
+			end
+		end
+		assert(#repeated >= 2 and repeated[1] == "only-proverb" and repeated[2] == "only-proverb", "a single candidate is reused")
+	end
+	local two = baseRows()
+	table.insert(two, sampleRow("proverb-a", "Proverb", "1", "time flies", "세월은 빨라"))
+	table.insert(two, sampleRow("proverb-b", "Proverb", "1", "haste makes waste", "급할수록 돌아가라"))
+	table.insert(two, sampleRow("practice-only", "Essential", "0", "drill", "연습"))
+	table.insert(two, sampleRow("hidden", "Essential", "1", "hidden word", "숨김", "0"))
+	table.insert(two, sampleRow("missing-ko", "Daily", "1", "only english", ""))
+	local doubled = QuestionRules.openOrder(two, grades, { "en", "ko" }, 9)
+	assert(doubled ~= nil and QuestionRules.ensureSlot(doubled :: MatchOrder, 80) ~= nil)
+	if doubled ~= nil then
+		local drawn: {string} = {}
+		for index = 1, #doubled.slots do
+			local id = doubled.slots[index].id
+			assert(id ~= "practice-only" and id ~= "hidden" and id ~= "missing-ko", "inactive, practice, and untranslated rows stay out of the match")
+			if doubled.slots[index].category == "Proverb" then
+				table.insert(drawn, id)
+			end
+		end
+		assert(#drawn >= 3 and drawn[1] ~= drawn[2] and drawn[3] ~= drawn[2], "two proverbs reshuffle without repeating the last id")
+	end
+	local PracticeRules = if script then require(script.Parent.PracticeRules) else require("./PracticeRules")
+	local practiceWords = PracticeRules.catalog(two, "en")
+	local practiceFound = false
+	for _, prompt in practiceWords do
+		if prompt.id == "practice-only" then
+			practiceFound = true
+		end
+		assert(prompt.id ~= "hidden", "practice still skips a disabled row")
+	end
+	assert(practiceFound, "practice keeps a rank-ineligible row")
+	local koreanOnly = baseRows()
+	table.insert(koreanOnly, sampleRow("proverb-ko", "Proverb", "1", "", "앞을 봐"))
+	local koOnly = QuestionRules.openOrder(koreanOnly, grades, { "ko" }, 4)
+	local bothLanguages = QuestionRules.openOrder(koreanOnly, grades, { "en", "ko" }, 4)
+	assert(koOnly ~= nil and bothLanguages == nil, "an empty English cell is excluded only when English is playing")
 end
 
 return QuestionRules

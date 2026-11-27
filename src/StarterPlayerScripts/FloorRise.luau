@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
+local DigitPadEffect = require(ReplicatedStorage.Shared.DigitPadEffect)
 local FloorRules = require(ReplicatedStorage.Shared.FloorRules)
 local PadLook = require(ReplicatedStorage.Shared.PadLook)
 local SoundManager = require(script.Parent.SoundManager)
@@ -28,6 +29,15 @@ type Paint = {
 	body: string,
 	rim: string,
 	effect: string,
+	preset: string,
+}
+
+type Glyph = {
+	gui: BillboardGui,
+	image: ImageLabel,
+	born: number,
+	origin: Vector3,
+	up: Vector3,
 }
 
 type Show = {
@@ -40,6 +50,10 @@ type Show = {
 	standY: number,
 	built: {Visual},
 	generation: number,
+	elapsed: number,
+	digit: number,
+	point: number,
+	glyphs: {Glyph},
 }
 
 type Lift = {
@@ -72,6 +86,7 @@ local function readPaint(payload: {[string]: any}): Paint
 		body = if type(payload.body) == "string" then payload.body else "126;84;255",
 		rim = if type(payload.rim) == "string" then payload.rim else "none",
 		effect = if type(payload.effect) == "string" then payload.effect else "none",
+		preset = if type(payload.preset) == "string" then payload.preset else "",
 	}
 end
 
@@ -87,8 +102,179 @@ local function applyLook(body: BasePart, rim: BasePart?, paint: Paint)
 	local emitter = rim:FindFirstChild("ParticleEmitter")
 	if emitter ~= nil and emitter:IsA("ParticleEmitter") then
 		emitter.Enabled = effectOn
+		if paint.preset == DigitPadEffect.Id then
+			emitter.Enabled = false
+		end
 		if effectColor ~= nil then
 			emitter.Color = ColorSequence.new(effectColor)
+		end
+	end
+	if paint.preset == DigitPadEffect.Id then
+		local spark = body:FindFirstChild("Spark")
+		if spark ~= nil then
+			spark:Destroy()
+		end
+		local motes = body:FindFirstChild("PadEffect")
+		if motes ~= nil then
+			motes:Destroy()
+		end
+	end
+end
+
+local function ensureDigitHost(visual: Visual)
+	local rim = visual.rim
+	if rim == nil then
+		return
+	end
+	local folder = rim:FindFirstChild("Digits")
+	if folder == nil then
+		folder = Instance.new("Folder")
+		folder.Name = "Digits"
+		folder.Parent = rim
+		for point = 1, DigitPadEffect.PointCount do
+			local attachment = Instance.new("Attachment")
+			attachment.Name = "Point" .. tostring(point)
+			attachment.Parent = folder
+		end
+	end
+	for point = 1, DigitPadEffect.PointCount do
+		local attachment = folder:FindFirstChild("Point" .. tostring(point))
+		if attachment ~= nil and attachment:IsA("Attachment") then
+			attachment.Position = DigitPadEffect.localPoint(rim.Size, point)
+		end
+	end
+end
+
+local function digitAnchor(): BasePart
+	local folder = Workspace:FindFirstChild("FloorVisuals")
+	if folder == nil then
+		folder = Instance.new("Folder")
+		folder.Name = "FloorVisuals"
+		folder.Parent = Workspace
+	end
+	local existing = folder:FindFirstChild("DigitAnchor")
+	if existing ~= nil and existing:IsA("BasePart") then
+		return existing
+	end
+	local part = Instance.new("Part")
+	part.Name = "DigitAnchor"
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanTouch = false
+	part.CanQuery = false
+	part.Transparency = 1
+	part.Size = Vector3.new(0.2, 0.2, 0.2)
+	part.CFrame = CFrame.new()
+	part.Parent = folder
+	return part
+end
+
+local function clearGlyphs(show: Show)
+	for _, glyph in show.glyphs do
+		glyph.gui:Destroy()
+	end
+	table.clear(show.glyphs)
+end
+
+local function spawnGlyph(show: Show, origin: Vector3, up: Vector3, digit: number, studs: number, color: Color3)
+	local anchor = digitAnchor()
+	local offset, rect = DigitPadEffect.cell(digit)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "Digit" .. tostring(digit)
+	gui.LightInfluence = 0
+	gui.MaxDistance = 140
+	gui.Size = UDim2.fromScale(studs, studs)
+	gui.Adornee = anchor
+	gui.StudsOffsetWorldSpace = origin - anchor.Position
+	local image = Instance.new("ImageLabel")
+	image.Name = "Glyph"
+	image.BackgroundTransparency = 1
+	image.Size = UDim2.fromScale(1, 1)
+	image.ScaleType = Enum.ScaleType.Fit
+	image.Image = DigitPadEffect.image()
+	image.ImageColor3 = color
+	image.ImageRectOffset = offset
+	image.ImageRectSize = rect
+	image.Parent = gui
+	gui.Parent = anchor
+	table.insert(show.glyphs, {
+		gui = gui,
+		image = image,
+		born = os.clock(),
+		origin = origin,
+		up = up,
+	})
+end
+
+local function stepGlyphs(show: Show)
+	local anchor = digitAnchor()
+	local now = os.clock()
+	for index = #show.glyphs, 1, -1 do
+		local glyph = show.glyphs[index]
+		local alpha = (now - glyph.born) / DigitPadEffect.Lifetime
+		if alpha >= 1 or glyph.gui.Parent == nil then
+			glyph.gui:Destroy()
+			table.remove(show.glyphs, index)
+		else
+			local world = glyph.origin + glyph.up * (DigitPadEffect.Rise * alpha)
+			glyph.gui.StudsOffsetWorldSpace = world - anchor.Position
+			glyph.image.ImageTransparency = alpha
+		end
+	end
+end
+
+local function placeDigitHost(show: Show)
+	local top = show.built[#show.built]
+	local kept: Instance? = nil
+	for _, visual in show.built do
+		local rim = visual.rim
+		local folder = if rim ~= nil then rim:FindFirstChild("Digits") else nil
+		if folder ~= nil then
+			if kept == nil then
+				kept = folder
+			else
+				folder:Destroy()
+			end
+		end
+	end
+	local color = if show.paint.preset == DigitPadEffect.Id then PadLook.parseColor(show.paint.effect) else nil
+	if top == nil or top.rim == nil or color == nil then
+		if kept ~= nil then
+			kept:Destroy()
+		end
+		return
+	end
+	if kept ~= nil and kept.Parent ~= top.rim then
+		kept.Parent = top.rim
+	end
+	ensureDigitHost(top)
+end
+
+local function emitDigit(show: Show, dt: number)
+	if show.paint.preset ~= DigitPadEffect.Id then
+		return
+	end
+	local top = show.built[#show.built]
+	local rim = if top ~= nil then top.rim else nil
+	if rim == nil then
+		return
+	end
+	local folder = rim:FindFirstChild("Digits")
+	local color = PadLook.parseColor(show.paint.effect)
+	if folder == nil or color == nil then
+		return
+	end
+	show.elapsed += dt
+	local interval = DigitPadEffect.interval()
+	local bursts = 0
+	while show.elapsed >= interval and bursts < 3 do
+		show.elapsed -= interval
+		bursts += 1
+		show.digit = show.digit % DigitPadEffect.Count + 1
+		show.point = show.point % DigitPadEffect.PointCount + 1
+		local point = folder:FindFirstChild("Point" .. tostring(show.point))
+		if point ~= nil and point:IsA("Attachment") then
+			spawnGlyph(show, point.WorldPosition, rim.CFrame.XVector, show.digit, math.max(0.25, rim.Size.Y * 0.14), color)
 		end
 	end
 end
@@ -202,6 +388,7 @@ end
 
 local function destroyShow(show: Show)
 	show.generation += 1
+	clearGlyphs(show)
 	for _, visual in show.built do
 		visual.body:Destroy()
 	end
@@ -224,6 +411,10 @@ local function ensure(userId: number, matchId: number, x: number, surfaceY: numb
 			standY = standY,
 			built = {},
 			generation = 1,
+			elapsed = 0,
+			digit = 0,
+			point = 0,
+			glyphs = {},
 		}
 		shows[userId] = show
 	else
@@ -318,7 +509,14 @@ local function onVisual(payload: any)
 	local standY = if type(payload.standY) == "number" then payload.standY else payload.y
 	local show = ensure(payload.userId, payload.matchId, payload.x, payload.y, payload.z, standY, paint)
 	if payload.action ~= "sync" and payload.action ~= "rise" then return end
-	if floors <= #show.built then return end
+	if floors <= #show.built then
+		local top = show.built[#show.built]
+		if top ~= nil then
+			applyLook(top.body, top.rim, show.paint)
+		end
+		placeDigitHost(show)
+		return
+	end
 	liftCharacter(show, floors)
 	for index = #show.built + 1, floors do
 		if index == floors and payload.action == "rise" then
@@ -327,6 +525,7 @@ local function onVisual(payload: any)
 			spawnFloor(show, index, FLOOR.FloorEndScale, show.generation)
 		end
 	end
+	placeDigitHost(show)
 end
 
 local function flushHeld()
@@ -367,6 +566,16 @@ function FloorRise.bind(): () -> ()
 				if rim ~= nil then
 					rim.CFrame = visual.body.CFrame * CFrame.Angles(visual.spin, 0, 0)
 				end
+			end
+			if show.paint.preset == DigitPadEffect.Id then
+				local top = show.built[#show.built]
+				if top ~= nil then
+					ensureDigitHost(top)
+				end
+				stepGlyphs(show)
+				emitDigit(show, dt)
+			elseif #show.glyphs > 0 then
+				clearGlyphs(show)
 			end
 		end
 	end)

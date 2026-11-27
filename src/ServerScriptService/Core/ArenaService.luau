@@ -15,6 +15,7 @@ local ARENA = constants.Arena
 -- A floor disc is only a few tenths thick. Standing players are still "in the circle".
 local STAND_CLEARANCE = 8
 local PAD_THICKNESS = 1
+local PAD_COLOR = Color3.fromRGB(146, 172, 215)
 local LOBBY_RING_RADIUS = 3
 
 local ArenaService = {}
@@ -263,19 +264,10 @@ function ArenaService.ensurePads(): {BasePart}
 			pad.TopSurface = Enum.SurfaceType.Smooth
 			pad.BottomSurface = Enum.SurfaceType.Smooth
 			pad.Parent = folder
-			local billboard = Instance.new("BillboardGui")
-			billboard.Name = "Index"
-			billboard.Size = UDim2.fromOffset(36, 20)
-			billboard.StudsOffset = Vector3.new(0, 2.2, 0)
-			billboard.Parent = pad
-			local label = Instance.new("TextLabel")
-			label.BackgroundTransparency = 1
-			label.Size = UDim2.fromScale(1, 1)
-			label.Font = Enum.Font.GothamBold
-			label.Text = tostring(index)
-			label.TextColor3 = Color3.new(1, 1, 1)
-			label.TextScaled = true
-			label.Parent = billboard
+		end
+		local indexLabel = pad:FindFirstChild("Index")
+		if indexLabel ~= nil then
+			indexLabel:Destroy()
 		end
 		pad.Shape = Enum.PartType.Cylinder
 		pad.Size = Vector3.new(PAD_THICKNESS, ARENA.PadDiameter, ARENA.PadDiameter)
@@ -288,6 +280,7 @@ function ArenaService.ensurePads(): {BasePart}
 		-- Local X is the cylinder axis; roll it to world Y so the pad lies flat.
 		pad.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
 		PadLook.apply(pad, dressed[index] or PadLook.starter())
+		pad.Color = PAD_COLOR
 		nextPads[index] = pad
 	end
 	for _, child in folder:GetChildren() do
@@ -319,6 +312,7 @@ function ArenaService.dress(padIndex: number, paint: PadLook.Paint)
 	local pad = current[padIndex]
 	if pad ~= nil then
 		PadLook.apply(pad, paint)
+		pad.Color = PAD_COLOR
 	end
 end
 
@@ -328,6 +322,7 @@ function ArenaService.undress(padIndex: number)
 	local pad = if current ~= nil then current[padIndex] else nil
 	if pad ~= nil then
 		PadLook.apply(pad, PadLook.starter())
+		pad.Color = PAD_COLOR
 	end
 end
 
@@ -340,6 +335,7 @@ function ArenaService.undressAll()
 	for _, pad in current do
 		if pad.Parent ~= nil then
 			PadLook.apply(pad, PadLook.starter())
+			pad.Color = PAD_COLOR
 		end
 	end
 end

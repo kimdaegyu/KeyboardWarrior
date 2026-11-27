@@ -72,6 +72,7 @@ local function withLook(player: Player, payload: {[string]: any}): {[string]: an
 	payload.body = paint.body
 	payload.rim = paint.rim
 	payload.effect = paint.effect
+	payload.preset = if type(paint.preset) == "string" then paint.preset else ""
 	return payload
 end
 

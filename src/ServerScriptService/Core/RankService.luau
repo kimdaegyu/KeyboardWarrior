@@ -193,6 +193,10 @@ local function snapshot()
 	return boardStatus, boardRows or {}
 end
 
+function RankService.board(): (string, {RankRules.Placed})
+	return snapshot()
+end
+
 function RankService.noteSaved(userId: number)
 	local profile = ProfileService.read(userId)
 	if not profile then return end
@@ -231,6 +235,24 @@ local function push(player: Player)
 		return
 	end
 	event:FireClient(player, payload(player.UserId))
+end
+
+function RankService.forget(userId: number)
+	if not RunService:IsStudio() then
+		return
+	end
+	confirmed[userId] = nil
+	changedAt[userId] = nil
+	pending[userId] = nil
+	details[userId] = nil
+	nextBoardCheck = 0
+	pcall(function()
+		store:RemoveAsync(tostring(userId))
+	end)
+end
+
+function RankService.refresh(player: Player)
+	push(player)
 end
 
 function RankService.start()

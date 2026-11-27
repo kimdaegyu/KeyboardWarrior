@@ -81,4 +81,8 @@ function TutorialService.start()
 	end)
 end
 
+function TutorialService.refresh(player: Player)
+	push(player, "ready")
+end
+
 return TutorialService

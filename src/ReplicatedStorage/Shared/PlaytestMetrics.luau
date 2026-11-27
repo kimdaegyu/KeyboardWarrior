@@ -15,6 +15,7 @@ export type Sample = {
 	language: string,
 	multiplier: number,
 	issuedAt: number,
+	revision: string,
 	status: string,
 	method: Method,
 	elapsed: number?,
@@ -69,7 +70,8 @@ function PlaytestMetrics.issue(
 	kind: string,
 	language: string,
 	multiplier: number,
-	issuedAt: number
+	issuedAt: number,
+	revision: string?
 )
 	local key = keyFor(userId, issue)
 	if state.samples[key] ~= nil then
@@ -84,6 +86,7 @@ function PlaytestMetrics.issue(
 		language = language,
 		multiplier = multiplier,
 		issuedAt = issuedAt,
+		revision = if type(revision) == "string" then revision else "",
 		status = "open",
 		method = "unknown",
 	}
@@ -180,15 +183,16 @@ end
 
 function PlaytestMetrics.report(round: any): string
 	local state = round.metrics :: State
-	local groups: {[string]: {questionId: string, language: string, kind: string, method: Method, issued: number, done: number, elapsed: number}} = {}
+	local groups: {[string]: {questionId: string, revision: string, language: string, kind: string, method: Method, issued: number, done: number, elapsed: number}} = {}
 	local groupOrder: {string} = {}
 	for _, key in state.order do
 		local sample = state.samples[key]
-		local groupKey = sample.questionId .. "\0" .. sample.language .. "\0" .. sample.kind .. "\0" .. sample.method
+		local groupKey = sample.questionId .. "\0" .. sample.revision .. "\0" .. sample.language .. "\0" .. sample.kind .. "\0" .. sample.method
 		local group = groups[groupKey]
 		if group == nil then
 			group = {
 				questionId = sample.questionId,
+				revision = sample.revision,
 				language = sample.language,
 				kind = sample.kind,
 				method = sample.method,
@@ -211,6 +215,9 @@ function PlaytestMetrics.report(round: any): string
 		if left.questionId ~= right.questionId then
 			return left.questionId < right.questionId
 		end
+		if left.revision ~= right.revision then
+			return left.revision < right.revision
+		end
 		if left.language ~= right.language then
 			return left.language < right.language
 		end
@@ -225,12 +232,17 @@ function PlaytestMetrics.report(round: any): string
 		"분당 점수 = 최종 점수 / (참가 시간(초) / 60). 완주자는 종료 시각-시작 시각, 이탈자는 이탈 시각-시작 시각.",
 		"문제 ID 언어 종류 입력 방식 출제 완료 미완료 평균 출제→정답 승인 시간",
 	}
+	if type(round.seed) == "number" and type(round.dataVersion) == "string" then
+		local languages = if type(round.languages) == "table" then table.concat(round.languages, ",") else ""
+		table.insert(lines, 2, string.format("시드 %d 데이터 %s 언어 %s", round.seed, round.dataVersion, languages))
+	end
 	for _, groupKey in groupOrder do
 		local group = groups[groupKey]
 		local incomplete = group.issued - group.done
 		local average = if group.done > 0 then group.elapsed / group.done else nil
+		local revisionLabel = if group.revision ~= "" then " 개정 " .. group.revision else ""
 		table.insert(lines, string.format(
-			"%s %s %s %s 출제 %d 완료 %d 미완료 %d 평균 %s (n=%d)",
+			"%s %s %s %s 출제 %d 완료 %d 미완료 %d 평균 %s (n=%d)%s",
 			group.questionId,
 			languageLabel(group.language),
 			kindLabel(group.kind),
@@ -239,7 +251,8 @@ function PlaytestMetrics.report(round: any): string
 			group.done,
 			incomplete,
 			secondsLabel(average),
-			group.done
+			group.done,
+			revisionLabel
 		))
 	end
 	table.insert(lines, "참가자")

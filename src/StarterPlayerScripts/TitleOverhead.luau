@@ -3,6 +3,8 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TextService = game:GetService("TextService")
 
 local ItemIconUtil = require(ReplicatedStorage.Shared.ItemIconUtil)
 local Localization = require(ReplicatedStorage.Shared.Localization)
@@ -150,19 +152,35 @@ local function mount(player: Player)
 	icon.Visible = ItemIconUtil.apply(icon, row.itemId)
 	icon.Parent = titleLabel
 	local function placeIcon()
-		local bounds = titleLabel.TextBounds
-		local width = titleLabel.AbsoluteSize.X
-		if not icon.Visible or bounds.X <= 0 or bounds.Y <= 0 or width <= 0 then
+		if titleLabel.Parent == nil or not icon.Visible then
 			return
 		end
-		local left = (width - bounds.X) / 2
-		icon.Size = UDim2.fromOffset(bounds.Y, bounds.Y)
-		icon.Position = UDim2.new(0, left - 3, 0.5, 0)
+		local width = titleLabel.AbsoluteSize.X
+		local height = titleLabel.AbsoluteSize.Y
+		if width < 1 or height < 1 then
+			return
+		end
+		local constraint = titleLabel:FindFirstChildOfClass("UITextSizeConstraint")
+		local maxSize = if constraint ~= nil and constraint:IsA("UITextSizeConstraint") then constraint.MaxTextSize else height
+		local fitted = math.clamp(height, 1, maxSize)
+		local measured = TextService:GetTextSize(titleLabel.Text, fitted, titleLabel.Font, Vector2.new(4096, fitted + 8))
+		local bounds = titleLabel.TextBounds
+		-- TextBounds lags behind the billboard as the camera moves, so a stale narrow
+		-- width parks the icon on the first glyphs. Use the wider measurement.
+		local textWidth = math.max(measured.X, bounds.X) + fitted * 0.12
+		local textHeight = math.clamp(math.max(measured.Y, bounds.Y, fitted), 1, height)
+		local gap = math.max(2, textHeight * 0.18)
+		local left = (width - textWidth) / 2
+		icon.Size = UDim2.fromOffset(textHeight, textHeight)
+		icon.Position = UDim2.new(0, left - gap, 0.5, 0)
 	end
+	local follow = RunService.Heartbeat:Connect(placeIcon)
+	billboard.Destroying:Connect(function()
+		follow:Disconnect()
+	end)
 	titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(placeIcon)
 	titleLabel:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeIcon)
 	placeIcon()
-	task.defer(placeIcon)
 	line("Name", player.DisplayName, Color3.new(1, 1, 1), 0.54, 0.46).Parent = billboard
 end
 

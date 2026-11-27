@@ -7,6 +7,7 @@ return table.freeze({
 	Match = table.freeze({
 		MinParticipants = 1,
 		MaxParticipants = maxParticipants,
+		ReadySeconds = 3,
 		PlaySeconds = 120,
 		ResultSeconds = 30,
 		RestSeconds = 30,

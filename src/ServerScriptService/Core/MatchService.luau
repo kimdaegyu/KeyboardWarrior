@@ -1,5 +1,5 @@
 --!strict
--- Server clock for rest → play → result. Clients read the same phase end time.
+-- Server clock for rest → ready → play → result. Clients read the same phase end time.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local MatchRules = require(ReplicatedStorage.Shared.MatchRules)
+local TableData = require(ReplicatedStorage.Shared.TableData)
 local ArenaService = require(script.Parent.ArenaService)
 local FloorService = require(script.Parent.FloorService)
 local ProfileService = require(script.Parent.ProfileService)
@@ -16,7 +17,7 @@ local RewardService = require(script.Parent.RewardService)
 
 local MATCH = constants.Match
 
-type Phase = "Rest" | "Play" | "Result"
+type Phase = "Rest" | "Ready" | "Play" | "Result"
 
 type Assignment = {
 	padIndex: number,
@@ -25,13 +26,15 @@ type Assignment = {
 }
 
 local NEXT_PHASE: {[Phase]: Phase} = {
-	Rest = "Play",
+	Rest = "Ready",
+	Ready = "Play",
 	Play = "Result",
 	Result = "Rest",
 }
 
 local PHASE_SECONDS: {[Phase]: number} = {
 	Rest = MATCH.RestSeconds,
+	Ready = MATCH.ReadySeconds,
 	Play = MATCH.PlaySeconds,
 	Result = MATCH.ResultSeconds,
 }
@@ -41,6 +44,7 @@ local MatchService = {}
 local started = false
 local phase: Phase = "Rest"
 local phaseEndsAt = 0
+local playStartsAt = 0
 local cycleId = 0
 local matchId = 0
 local participantCount = 0
@@ -76,6 +80,7 @@ local function publish()
 	end
 	folder:SetAttribute("Phase", phase)
 	folder:SetAttribute("PhaseEndsAt", phaseEndsAt)
+	folder:SetAttribute("PlayStartsAt", playStartsAt)
 	folder:SetAttribute("CycleId", cycleId)
 	folder:SetAttribute("MatchId", matchId)
 	folder:SetAttribute("ParticipantCount", participantCount)
@@ -164,6 +169,7 @@ local function clearAssignments()
 	for player, assignment in assignments do
 		FloorService.clear(player)
 		disconnectAssignment(assignment)
+		player:SetAttribute("MatchWarp", nil)
 		player:SetAttribute("InMatch", false)
 	end
 	table.clear(assignments)
@@ -203,6 +209,25 @@ local function watchPad(player: Player, assignment: Assignment)
 	end)
 end
 
+local function lobbyFadeSeconds(): number
+	for _, row in TableData.rows("SoundDataSheet") do
+		if row.SoundKey == "BgmLobby" then
+			local fade = tonumber(row.FadeOut)
+			if fade ~= nil and fade > 0 then
+				return fade
+			end
+		end
+	end
+	return 0
+end
+
+local function placeLocked()
+	for player, assignment in assignments do
+		player:SetAttribute("InMatch", true)
+		watchPad(player, assignment)
+	end
+end
+
 local function lockParticipants()
 	refreshZone()
 	local selected = MatchRules.selectParticipants(collectCandidates(), MATCH.MaxParticipants, MATCH.MinParticipants)
@@ -221,7 +246,6 @@ local function lockParticipants()
 	for _, player in Players:GetPlayers() do
 		byUserId[player.UserId] = player
 	end
-	local participants: {number} = {}
 	for slot, userId in ipairs(selected) do
 		local player = byUserId[userId]
 		local padIndex = padByUser[userId]
@@ -231,20 +255,16 @@ local function lockParticipants()
 				slot = slot,
 			}
 			assignments[player] = assignment
-			player:SetAttribute("InMatch", true)
-			watchPad(player, assignment)
-			table.insert(participants, userId)
+			player:SetAttribute("MatchWarp", true)
 		end
 	end
 	refreshZone()
-	if #participants > 0 then
-		QuestionService.openMatch(matchId, participants, phaseEndsAt)
-	end
 end
 
 local function returnParticipant(player: Player, assignment: Assignment, total: number)
 	disconnectAssignment(assignment)
 	ArenaService.undress(assignment.padIndex)
+	player:SetAttribute("MatchWarp", nil)
 	player:SetAttribute("InMatch", false)
 	local function park(character: Model)
 		if player.Parent == nil or character.Parent == nil or assignments[player] ~= nil then
@@ -293,14 +313,14 @@ local function releaseParticipants()
 end
 
 local function leaveParticipant(player: Player, requestedMatchId: any)
-	if phase ~= "Play" or type(requestedMatchId) ~= "number" or requestedMatchId ~= matchId then
+	if (phase ~= "Play" and phase ~= "Ready") or type(requestedMatchId) ~= "number" or requestedMatchId ~= matchId then
 		return
 	end
 	local assignment = assignments[player]
 	if assignment == nil then
 		return
 	end
-	local preview = QuestionService.preview(player.UserId)
+	local preview = if phase == "Play" then QuestionService.preview(player.UserId) else nil
 	if preview ~= nil and preview.sealed then
 		return
 	end
@@ -312,8 +332,11 @@ local function leaveParticipant(player: Player, requestedMatchId: any)
 	for _ in assignments do
 		participantCount += 1
 	end
-	if preview ~= nil then
+	if phase == "Play" and preview ~= nil then
 		RewardService.settleDeparture(player.UserId, false)
+		QuestionService.forget(player.UserId)
+	elseif phase == "Ready" then
+		QuestionService.dropPrepared(player.UserId)
 		QuestionService.forget(player.UserId)
 	end
 	refreshZone()
@@ -338,15 +361,38 @@ local function enter(nextPhase: Phase)
 		nextEnd = now + duration
 	end
 	phaseEndsAt = nextEnd
-	if nextPhase == "Play" then
+	if nextPhase == "Ready" then
+		playStartsAt = 0
 		lockParticipants()
-		local playing: {[Player]: boolean} = {}
-		for player in assignments do
-			playing[player] = true
+		if participantCount > 0 then
+			task.wait(lobbyFadeSeconds())
 		end
-		ArenaService.ejectOutsiders(playing)
-		ArenaService.setInnerWallCollide(true)
+		if participantCount > 0 then
+			local started = Workspace:GetServerTimeNow()
+			playStartsAt = started + MATCH.ReadySeconds
+			phaseEndsAt = playStartsAt
+			placeLocked()
+			local ids: {number} = {}
+			for player in assignments do
+				table.insert(ids, player.UserId)
+			end
+			if #ids > 0 then
+				QuestionService.prepareMatch(matchId, ids, playStartsAt, playStartsAt + MATCH.PlaySeconds)
+			end
+			local playing: {[Player]: boolean} = {}
+			for player in assignments do
+				playing[player] = true
+			end
+			ArenaService.ejectOutsiders(playing)
+			ArenaService.setInnerWallCollide(true)
+		end
+	elseif nextPhase == "Play" then
+		for player in assignments do
+			player:SetAttribute("MatchWarp", nil)
+		end
+		QuestionService.revealMatch()
 	elseif nextPhase == "Rest" and previous == "Result" then
+		playStartsAt = 0
 		FloorService.finishMatch(matchId)
 		releaseParticipants()
 	end
@@ -396,9 +442,11 @@ function MatchService.start()
 			assignments[player] = nil
 		end
 		waitingStarted[player] = nil
+		QuestionService.dropPrepared(player.UserId)
 		RewardService.onPlayerRemoving(player.UserId)
 		QuestionService.forget(player.UserId)
 		player:SetAttribute("InJoinZone", nil)
+		player:SetAttribute("MatchWarp", nil)
 		player:SetAttribute("InMatch", nil)
 		publish()
 		ProfileService.close(player.UserId)

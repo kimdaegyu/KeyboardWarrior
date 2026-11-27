@@ -112,4 +112,8 @@ function SettingsService.isMobile(userId: number): boolean
 	return mobileByUser[userId] ~= false
 end
 
+function SettingsService.refresh(player: Player)
+	push(player, "ready")
+end
+
 return SettingsService

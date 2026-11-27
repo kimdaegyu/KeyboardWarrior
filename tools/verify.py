@@ -127,6 +127,7 @@ def check_data(folder):
     effect_prices = sorted(int(row["Price"]) for row in live_gold if row["Category"] == "Effect")
     require(body_prices[0] == 100 and body_prices[-1] == 2000 and len(body_prices) == 10, "live body prices span the opening range")
     require(effect_prices[0] == 150 and effect_prices[-1] == 2250 and len(effect_prices) == 10, "live effect prices span the opening range")
+    require(by_shop["effect_sun_gold"]["Price"] == "2250" and by_shop["effect_sun_gold"]["Color"] == "255;226;114" and by_shop["effect_sun_gold"].get("EffectPresetId") == "digits", "golden digits keeps its price, color, and preset")
     achievements = read_rows(folder, "AchievementDataSheet", "Id TitleKey Score ShopId RobloxBadgeId itemId")
     item_ids = {row["Id"] for row in read_rows(folder, "ItemDataSheet", "Id Key")}
     expected_scores = ["200", "500", "700", "900", "1000", "1100", "1200", "1300", "1400", "1500"]
@@ -215,6 +216,74 @@ def check_data(folder):
     require(active == ["join", "typing", "practice", "shop"], "enabled tutorial pages")
     for row in tutorials:
         require(row["TitleKey"].startswith("Tutorial.") and row["BodyKey"].startswith("Tutorial."), f"tutorial copy key {row['Id']}")
+
+
+def check_match_deck():
+    rows = read_rows(SHARED / "Table", "QuestionDataSheet", "Id Kind GradeId Score Enabled en ko Category Topic RankEligible Revision")
+    allowed = {"Essential", "Daily", "Growth", "Proverb"}
+    counts = {name: 0 for name in allowed}
+    for row in rows:
+        require(row["Category"] in allowed, f"Unknown question category {row['Id']}")
+        require(row["RankEligible"] in ("0", "1"), f"Invalid rank flag {row['Id']}")
+        require(re.fullmatch(r"[0-9]+", row["Revision"]), f"Invalid revision {row['Id']}")
+        if row["Enabled"] == "1" and row["RankEligible"] == "1" and row["en"].strip() and row["ko"].strip():
+            counts[row["Category"]] += 1
+    for name in ("Essential", "Daily", "Growth", "Proverb"):
+        require(counts[name] >= 2, f"match deck needs at least two {name} rows")
+    design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
+    harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
+    require("RankEligible=1" in design and "20문제마다" in design and "N번째 문제 ID" in design, "the match deck is recorded")
+    require("Revision" in harness and "20문제마다" in harness and "시드" in harness, "the match deck checks are recorded")
+    rules = (SHARED / "QuestionRules.luau").read_text(encoding="utf-8")
+    service = (ROOT / "src/ServerScriptService/Core/QuestionService.luau").read_text(encoding="utf-8")
+    practice = (SHARED / "PracticeRules.luau").read_text(encoding="utf-8")
+    require("seedFromClock" in rules and "openOrder" in rules and "ensureSlot" in rules and "RankEligible" in rules, "the match order is built from a seed")
+    require("seedFromClock" in service and "openOrder" in service, "openMatch builds one shared order")
+    require("RankEligible" not in practice, "practice does not use the ranked filter")
+
+
+def check_countdown():
+    constants = (SHARED / "IngameConstants.luau").read_text(encoding="utf-8")
+    require("ReadySeconds = 3" in constants, "ready time lives in IngameConstants")
+    match = (ROOT / "src/ServerScriptService/Core/MatchService.luau").read_text(encoding="utf-8")
+    require('Rest = "Ready"' in match and "prepareMatch" in match and "revealMatch" in match, "ready places players before the question opens")
+    require('phase ~= "Play" and phase ~= "Ready"' in match, "ready leave cancels the prepared match")
+    service = (ROOT / "src/ServerScriptService/Core/QuestionService.luau").read_text(encoding="utf-8")
+    require(
+        "function QuestionService.prepareMatch" in service
+        and "function QuestionService.revealMatch" in service
+        and "function QuestionService.dropPrepared" in service,
+        "the first question waits for the start",
+    )
+    rules = (SHARED / "QuestionRules.luau").read_text(encoding="utf-8")
+    require('phase ~= "Ready"' in rules and "now < round.startedAt" in rules, "ready shows the screen and early submits are refused")
+    screen = (ROOT / "src/StarterPlayerScripts/TypingScreen.luau").read_text(encoding="utf-8")
+    require('SoundManager.play("MatchReady")' in screen and 'cover.Name = "Countdown"' in screen, "the parchment countdown covers the match HUD")
+    require("CaptureFocus" not in screen, "the countdown does not capture touch focus")
+    sound = (SHARED / "Table/SoundDataSheet.txt").read_text(encoding="utf-8")
+    require("MatchReady" in sound and "73005019111385" in sound, "MatchReady uses the previous ready cue")
+    design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
+    require("183초" in design and "준비 3초" in design, "the cycle includes the ready count")
+    smoke = (ROOT / "src/ServerScriptService/Core/StudioSmoke.luau").read_text(encoding="utf-8")
+    require("== 183" in smoke, "the studio cycle includes ready")
+    require(client_match_id("Ready", True, 4) == 4 and client_match_id("Ready", False, 4) == 0, "ready is the participant screen")
+
+
+def check_cheat():
+    design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
+    harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
+    require("F7" in design and "게시된 서버는 치트 요청을 만들지 않는다" in design, "Studio cheat stays in the design")
+    require("CheatRequest" in harness and "파라미터1" in harness, "Studio cheat stays in the harness")
+    client = (ROOT / "src/StarterPlayerScripts/CheatScreen.luau").read_text(encoding="utf-8")
+    server = (ROOT / "src/ServerScriptService/Core/CheatService.luau").read_text(encoding="utf-8")
+    bootstrap = (ROOT / "src/StarterPlayerScripts/Bootstrap.client.luau").read_text(encoding="utf-8")
+    server_boot = (ROOT / "src/ServerScriptService/Core/Bootstrap.server.luau").read_text(encoding="utf-8")
+    require("KeyCode.F7" in client and "IsStudio()" in client and "SafeRoot" not in client, "F7 cheat mounts from the client bootstrap")
+    require("DataStore" not in client and "ProfileService" not in client and "PlayerStore" not in client, "cheat UI does not write the profile")
+    require("Parameter1" in client and "Parameter2" in client and "CaptureFocus" not in client, "cheat rows keep both parameters")
+    require(server.index("if not RunService:IsStudio() then") < server.index('Instance.new("RemoteEvent")'), "published servers do not create CheatRequest")
+    require('action == "reset"' in server and 'action == "gold"' in server and "parseGold" in server, "reset and gold stay on the server")
+    require("CheatScreen" in bootstrap and "CheatService" in server_boot, "cheat is wired on both sides")
 
 
 def check_lobby_copy():
@@ -344,7 +413,7 @@ def check_m1_rules():
     require("RimRotationSpeed" not in floor_service, "the server does not spin rims")
     require("math.rad(FLOOR.RimRotationSpeed) * dt" in floor_rise and "BasePad" in floor_rise and "CanCollide = false" in floor_rise, "one client heartbeat spins every rim")
     require("phase ~= \"Play\" and phase ~= \"Result\"" in floor_rise and "if phase == \"Result\" then" in floor_rise, "result keeps the stacked pads")
-    rise_step = floor_rise.split("if floors <= #show.built then return end", 1)[1].split("local function flushHeld", 1)[0]
+    rise_step = floor_rise.split("if floors <= #show.built then", 1)[1].split("local function flushHeld", 1)[0]
     require(rise_step.index("liftCharacter(show, floors)") < rise_step.index("animateFloor(show, index)"), "client snaps before exposing the new floor")
     pump_src = floor_service.split("local function pump", 1)[1].split("local function drop", 1)[0]
     require(pump_src.index("pose(stack, stack.applied)") < pump_src.index("tell(withLook") < pump_src.index("task.wait"), "each individual lift is committed and broadcast before the visual wait")
@@ -353,11 +422,17 @@ def check_m1_rules():
     arena = (ROOT / "src/ServerScriptService/Core/ArenaService.luau").read_text(encoding="utf-8")
     enter = match[match.find("local function enter"):match.find("local function advance")]
     play_end = enter[enter.find('if previous == "Play"'):enter.find("phase = nextPhase")]
-    play_start = enter[enter.find('if nextPhase == "Play"'):enter.find("elseif")]
+    ready_at = enter.find('if nextPhase == "Ready"')
+    play_at = enter.find('elseif nextPhase == "Play"')
+    rest_at = enter.find('elseif nextPhase == "Rest"')
+    ready_start = enter[ready_at:play_at]
+    play_start = enter[play_at:rest_at]
     require("setInnerWallCollide(false)" in play_end and "FloorService.finishMatch" not in play_end, "the arena wall opens when play ends and the stack stays")
     require('FloorService.finishMatch(matchId)' in enter, "stacked pads clear after the result window")
-    require("ejectOutsiders" in play_start and "setInnerWallCollide(true)" in play_start, "outsiders leave before the wall closes")
+    require("ejectOutsiders" in ready_start and "setInnerWallCollide(true)" in ready_start, "outsiders leave before the wall closes")
+    require("revealMatch" in play_start and "lockParticipants" not in play_start, "the question opens when play starts")
     require('FindFirstChild("InWall")' in arena and "part.CanCollide = enabled" in arena, "InWall collision follows the match")
+    require("Color3.fromRGB(146, 172, 215)" in arena and 'billboard.Name = "Index"' not in arena and 'FindFirstChild("Index")' in arena, "arena pads keep one color and no index numbers")
 
 
 def enabled_deck(rows):
@@ -365,7 +440,7 @@ def enabled_deck(rows):
 
 
 def client_match_id(phase, in_match, match_id):
-    if phase != "Play" or not in_match or not isinstance(match_id, int) or match_id <= 0:
+    if phase not in ("Play", "Ready") or not in_match or not isinstance(match_id, int) or match_id <= 0:
         return 0
     return match_id
 
@@ -635,7 +710,7 @@ def check_m2_rules():
     service = (ROOT / "src/ServerScriptService/Core/QuestionService.luau").read_text(encoding="utf-8")
     require('rows("QuestionDataSheet")' in service and "QuestionRules" in service, "questions come from the sheet")
     match = (ROOT / "src/ServerScriptService/Core/MatchService.luau").read_text(encoding="utf-8")
-    require("QuestionService.openMatch" in match and "QuestionService.closeMatch" in match and "QuestionService.forget" in match, "match hooks")
+    require("QuestionService.prepareMatch" in match and "QuestionService.revealMatch" in match and "QuestionService.closeMatch" in match and "QuestionService.forget" in match, "match hooks")
     leave = match[match.find("local function leaveParticipant"):match.find("local function enter")]
     require("matchId = 0" not in leave and "returnParticipant" in leave and leave.find("settleDeparture") < leave.find("QuestionService.forget"), "one player leaves without resetting the match")
     require("ProfileService.close" not in leave and "placeInLobby" in match, "a leave returns that player and does not close the profile")
@@ -1253,11 +1328,11 @@ def check_m5_rules():
     require(restarted["solved"] == 0, "a new practice session starts at zero")
 
     def blocked(in_match, phase):
-        return in_match and phase in ("Play", "Result")
+        return in_match and phase in ("Play", "Ready", "Result")
 
     require(not blocked(True, "Rest"), "standing in the circle does not close practice")
-    require(blocked(True, "Play") and blocked(True, "Result"), "a confirmed participant leaves practice")
-    require(not blocked(False, "Play") and not blocked(False, "Result"), "another match does not close practice")
+    require(blocked(True, "Play") and blocked(True, "Ready") and blocked(True, "Result"), "a confirmed participant leaves practice")
+    require(not blocked(False, "Play") and not blocked(False, "Ready") and not blocked(False, "Result"), "another match does not close practice")
 
     phone = practice_plan(568, 320, True)
     require(phone["toolbar"] == 36 and phone["questionHeight"] == 76 and phone["inputHeight"] == 28, "phone practice prompt")
@@ -1737,6 +1812,12 @@ def check_rank():
     require("TopCount = 50" in constants and "CacheSeconds = 60" in constants, "rank size and cache live in the shared constants")
     service = (ROOT / "src/ServerScriptService/Core/RankService.luau").read_text(encoding="utf-8")
     require("GetOrderedDataStore" in service and "studioScope" in service and "UpdateAsync" in service, "global rank uses the ordered store and the studio scope")
+    require("function RankService.board" in service, "the lobby board reads the shared rank snapshot")
+    board = (ROOT / "src/ServerScriptService/Core/RankBoard.luau").read_text(encoding="utf-8")
+    require("Workspace" in board and 'FindFirstChild("Rank")' in board and 'FindFirstChild("SurfaceGui")' in board, "the lobby board uses the placed surface")
+    require("GetSortedAsync" not in board and "GetOrderedDataStore" not in board and "snapshots.personal" not in board and "RankService.board" in board, "the lobby board does not query rank stores itself")
+    require("HeadShot" in board and "FaceToken" in board and "math.min(10" in board and "TextTruncate" in board, "ten faces stay with their rows")
+    require("TextScaled = true" not in board and "BODY_OF_FACE = 0.65" in board and "PixelsPerStud" in board and "GothamBold" in board, "board text is sized from the face and the canvas")
     require("ProfileService.commit" not in service, "a rank write does not settle rewards again")
     require("setReadyHandler" in service and "noteSaved" in service, "an existing record is published on the next profile load")
     rewards = (ROOT / "src/ServerScriptService/Core/RewardService.luau").read_text(encoding="utf-8")
@@ -1752,7 +1833,9 @@ def check_rank():
     design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
     harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
     require("정식 경기를 끝까지 완료" in design and "아직 기록이 없습니다" in design, "the rank pilot is recorded")
+    require("글로벌 랭킹 TOP 10" in design and "랭킹 불러오는 중" in design and "아직 등록된 기록이 없습니다" in design, "the lobby board states are recorded")
     require("랭크 반영이 실패해도" in harness and "1위, 1위, 3위" in harness, "the rank checks are recorded")
+    require("Workspace.Rank.Rank.SurfaceGui" in harness and "10위까지" in harness, "the lobby board is checked against the rank window")
     with (ROOT / "src/localization/CoreStrings.csv").open(encoding="utf-8", newline="") as stream:
         copy = {row["Key"]: row for row in csv.DictReader(stream)}
     for key in (
@@ -1768,6 +1851,11 @@ def check_rank():
         "Rank.Player",
         "Rank.Score",
         "Rank.Close",
+        "Rank.Board.Title",
+        "Rank.Board.Face",
+        "Rank.Board.Name",
+        "Rank.Board.Loading",
+        "Rank.Board.Empty",
     ):
         require(key in copy and copy[key]["Source"].strip() and copy[key]["ko"].strip(), f"Missing string {key}")
     require("{score}" in copy["Rank.Mine"]["ko"], "the personal best uses a placeholder")
@@ -1798,11 +1886,15 @@ def check_shop():
     lock = match[match.find("local function lockParticipants"):match.find("local function returnParticipant")]
     require("ArenaService.dress(" not in lock and "paintFor" not in lock and "ArenaService.undress" in match and "undressAll" in match, "arena pads are not painted with the equipped look")
     floors = (ROOT / "src/ServerScriptService/Core/FloorService.luau").read_text(encoding="utf-8")
-    require("ShopService.paintFor" in floors and "payload.body" in floors and "payload.effect" in floors, "stacked floors receive the equipped look")
+    require("ShopService.paintFor" in floors and "payload.body" in floors and "payload.effect" in floors and "payload.preset" in floors, "stacked floors receive the equipped look")
     rise_visual = (ROOT / "src/StarterPlayerScripts/FloorRise.luau").read_text(encoding="utf-8")
     require("PadLook.forStack" in rise_visual and "emitter.Enabled = effectOn" in rise_visual, "each stack pad uses the body, rim, and effect")
+    require("DigitPadEffect.cell" in rise_visual and "ImageRectOffset" in rise_visual and "ImageRectSize" in rise_visual and "payload.preset" in rise_visual, "digits emit on the client from the shared atlas cell")
     screen = (ROOT / "src/StarterPlayerScripts/ShopScreen.luau").read_text(encoding="utf-8")
     require("ViewportFrame" in screen and "ScrollingFrame" in screen and "blockedByMatch" in screen, "the shop previews a pad and scrolls the list")
+    require("DigitPadEffect.cell" in screen and "BasePad" in screen and "ClipsDescendants = true" in screen and "DigitPadEffect.project" in screen and "ImageRectOffset" in screen, "the shop preview uses the same atlas cell")
+    atlas = (SHARED / "DigitPadEffect.luau").read_text(encoding="utf-8")
+    require("DigitPadEffect.ImageId" in atlas and "digits_atlas.png" in atlas and "((n - 1) % 4) * 64" in atlas and "math.floor((n - 1) / 4) * 64" in atlas, "one atlas id feeds the shared digit cell")
     close_fn = screen[screen.find("closeButton.Activated"):screen.find("buyButton.Activated")]
     require("FireServer" not in close_fn and "ShopState.buy" not in close_fn and "ShopState.equip" not in close_fn, "closing the shop does not buy or equip")
     for banned in ("DataStore", "PlayerStore", "SetCache", "QuestionSubmit"):
@@ -1814,8 +1906,8 @@ def check_shop():
     require("billboard.Adornee = root" in overhead and "offset.Y + CLEARANCE + BILLBOARD_HEIGHT * 0.5" in overhead and "joint.Transform" not in overhead and "inLobby" not in overhead and "ItemIconUtil.apply" in overhead and "TextXAlignment.Left" not in overhead and "TextBounds" in overhead, "the title stays centered and the icon sits in front of the glyphs")
     design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
     harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
-    require("Studio에서만 판매" in design and "한 번만 차감" in design, "the shop pilot is recorded")
-    require("한 번만 차감" in harness and "20골드" in harness, "the shop checks are recorded")
+    require("Studio에서만 판매" in design and "한 번만 차감" in design and "수명 0.85초" in design, "the shop pilot is recorded")
+    require("한 번만 차감" in harness and "20골드" in harness and "수명 0.85초" in harness, "the shop checks are recorded")
     with (ROOT / "src/localization/CoreStrings.csv").open(encoding="utf-8", newline="") as stream:
         copy = {row["Key"]: row for row in csv.DictReader(stream)}
     for key in (
@@ -1847,6 +1939,7 @@ def check_shop():
     ):
         require(key in copy and copy[key]["Source"].strip() and copy[key]["ko"].strip(), f"Missing string {key}")
     require("{price}" in copy["Shop.Buy"]["ko"] and "{gold}" in copy["Shop.Gold"]["ko"], "shop prices use placeholders")
+    require(copy["Shop.Name.effect_sun_gold"]["Source"] == "Golden Digits" and copy["Shop.Name.effect_sun_gold"]["ko"] == "금빛 숫자", "the golden digits name keeps its localization key")
     for index in range(1, 11):
         title_key = f"Achievement.Title{index}"
         rim_key = f"Shop.Name.rim_title_{index:02d}"
@@ -1899,6 +1992,9 @@ def verify():
         tree = ElementTree.parse(output)
         check_lobby_copy()
         check_m1_rules()
+        check_cheat()
+        check_match_deck()
+        check_countdown()
         check_m2_rules()
         check_m3_rules()
         check_m4_rules()
@@ -1936,6 +2032,7 @@ def verify():
             ("ModuleScript", "RankService"),
             ("ModuleScript", "RankState"),
             ("ModuleScript", "RankScreen"),
+            ("ModuleScript", "RankBoard"),
             ("ModuleScript", "ShopRules"),
             ("ModuleScript", "ShopLayout"),
             ("ModuleScript", "PadLook"),

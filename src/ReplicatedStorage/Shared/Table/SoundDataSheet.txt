@@ -7,4 +7,5 @@ Id,SoundKey,UnitId,Category,SpatialMode,AssetId,Volume,PlaybackSpeedMin,Playback
 8,UIError,,UI,Global2D,101648528326432,0.28,0.68,0.68,0,0.4,2,75,0,0,0,0.08,2,1,Single Tone Single High Pitch Beep Tones 3 (SFX),ProSoundEffects,https://create.roblox.com/store/asset/9119144736,StoreListed_StudioPending,자원 부족·거절. 낮은 피치 공용 경고.
 9,Reward,,UI,Global2D,9119144736,0.3,1.25,1.25,0,0.4,2,75,0,0,0,0.08,1.5,1,Single Tone Single High Pitch Beep Tones 3 (SFX),ProSoundEffects,https://create.roblox.com/store/asset/9119144736,StoreListed_StudioPending,보상 확정 1회. 개별 아이템마다 반복 금지.
 12,MatchStart,,System,Global2D,9125403433,1,1,1,0,1,2,90,0,0,0,0.08,4,1,Boom Impact Deep Distant Thumping Hits Boomi (SFX),ProSoundEffects,https://create.roblox.com/store/asset/9125403433,StoreListed_StudioPending,실제 GO 표시 시 1회.
-13,PadLevelUp,,SFX,Global2D,,0.3,1,1,0,0,2,75,0,0,0,0.08,0.18,1,,,,AssetPending,발판 1단 연출이 시작될 때 1회. AssetId는 나중에 지정한다. 반복 재생 없음.
+13,PadLevelUp,,SFX,Global2D,6586979979,0.3,1,1,0,0,2,75,0,0,0,0.08,0.18,1,,,,AssetPending,발판 1단 연출이 시작될 때 1회. AssetId는 나중에 지정한다. 반복 재생 없음.
+14,MatchReady,,System,Global2D,89656161865201,0.8,1,1,0,0,3,90,0,0,0,0.05,0,1,MatchReady,KDefenceSimulator,https://create.roblox.com/store/asset/73005019111385,StoreListed_StudioPending,준비 숫자 1회. 효과음 볼륨을 따른다. 1초 간격으로 세 번 재생.

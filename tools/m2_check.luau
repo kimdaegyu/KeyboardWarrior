@@ -12,6 +12,7 @@ local QuestionRules = require("../src/ReplicatedStorage/Shared/QuestionRules")
 local ResultLayout = require("../src/ReplicatedStorage/Shared/ResultLayout")
 local RankLayout = require("../src/ReplicatedStorage/Shared/RankLayout")
 local ShopLayout = require("../src/ReplicatedStorage/Shared/ShopLayout")
+local DigitPadEffect = require("../src/ReplicatedStorage/Shared/DigitPadEffect")
 local ShopRules = require("../src/ReplicatedStorage/Shared/ShopRules")
 local TitleRules = require("../src/ReplicatedStorage/Shared/TitleRules")
 local RankRules = require("../src/ReplicatedStorage/Shared/RankRules")
@@ -37,7 +38,7 @@ local function readSheet(path: string): {QuestionRules.SheetRow}
 				Kind = "",
 			}
 			for column, header in ipairs(headers) do
-				if header == "Id" or header == "Enabled" or header == "en" or header == "ko" or header == "Score" or header == "GradeId" or header == "Kind" then
+				if header == "Id" or header == "Enabled" or header == "en" or header == "ko" or header == "Score" or header == "GradeId" or header == "Kind" or header == "Category" or header == "RankEligible" or header == "Revision" then
 					row[header] = values[column] or ""
 				end
 			end
@@ -143,6 +144,7 @@ TutorialRules.selfCheck()
 TutorialLayout.selfCheck()
 RankRules.selfCheck()
 RankLayout.selfCheck()
+DigitPadEffect.selfCheck()
 ShopRules.selfCheck()
 TitleRules.selfCheck()
 ShopLayout.selfCheck()
@@ -249,4 +251,8 @@ local function readLanguage(path: string): {SettingsRules.Row}
 	return sheet
 end
 MatchRegression.selfCheck(rows, grades, rewardRows, readLanguage("src/ReplicatedStorage/Shared/Table/LanguageDataSheet.txt"), constants)
+local MatchRules = require("../src/ReplicatedStorage/Shared/MatchRules")
+local MatchCountdown = require("../src/ReplicatedStorage/Shared/MatchCountdown")
+MatchRules.selfCheck(constants)
+MatchCountdown.selfCheck()
 print("PASS m2 question rules")

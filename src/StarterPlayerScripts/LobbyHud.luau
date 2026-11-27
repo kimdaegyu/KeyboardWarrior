@@ -16,6 +16,7 @@ local CAPACITY = constants.Match.MaxParticipants
 
 local PHASE_KEYS: {[string]: string} = {
 	Play = "Lobby.PhasePlay",
+	Ready = "Lobby.PhaseReady",
 	Result = "Lobby.PhaseResult",
 	Rest = "Lobby.PhaseRest",
 }
@@ -240,7 +241,7 @@ function LobbyHud.bind(root: Frame): () -> ()
 		local rankOpen = root:GetAttribute("RankOpen") == true
 		local shopOpen = root:GetAttribute("ShopOpen") == true
 		local dismissed = phaseName == "Result" and root:GetAttribute("ResultDismissed") == true
-		local playing = inMatch and (phaseName == "Play" or (phaseName == "Result" and not dismissed))
+		local playing = inMatch and (phaseName == "Play" or phaseName == "Ready" or (phaseName == "Result" and not dismissed))
 		panel.Visible = not practicing and not settingsOpen and not tutorialOpen and not rankOpen and not shopOpen and not playing
 		local available = canPractice()
 		UiChrome.paint(practiceButton, if available then "primary" else "panel")

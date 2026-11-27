@@ -105,7 +105,8 @@ function MatchRules.selfCheck(constants: any)
 	local match = constants.Match
 	local arena = constants.Arena
 	assert(match.MinParticipants == 1 and match.MaxParticipants == 12)
-	assert(match.PlaySeconds == 120 and match.ResultSeconds == 30 and match.RestSeconds == 30)
+	assert(match.ReadySeconds == 3 and match.PlaySeconds == 120 and match.ResultSeconds == 30 and match.RestSeconds == 30)
+	assert(match.ReadySeconds + match.PlaySeconds + match.ResultSeconds + match.RestSeconds == 183)
 	assert(math.abs(arena.PadCenterRadius - 30.91) < 0.01)
 	local points = MatchRules.padPoints(match.MaxParticipants, arena.PadCenterRadius)
 	assert(#points == 12)

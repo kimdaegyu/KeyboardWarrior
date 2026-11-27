@@ -12,6 +12,7 @@ local Workspace = game:GetService("Workspace")
 
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local Localization = require(ReplicatedStorage.Shared.Localization)
+local MatchCountdown = require(ReplicatedStorage.Shared.MatchCountdown)
 local QuestionRules = require(ReplicatedStorage.Shared.QuestionRules)
 local TypingLayout = require(ReplicatedStorage.Shared.TypingLayout)
 local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
@@ -188,6 +189,68 @@ function TypingScreen.bind(root: Frame): () -> ()
 	UiChrome.round(inputLabel)
 	inputLabel.Parent = column
 
+	local IVORY = Color3.fromRGB(244, 232, 208)
+	local CURL = Color3.fromRGB(214, 186, 140)
+	local CURL_EDGE = Color3.fromRGB(166, 128, 82)
+	local INK = Color3.fromRGB(92, 58, 28)
+	local CURL_WIDTH = 28
+
+	local cover = Instance.new("Frame")
+	cover.Name = "Countdown"
+	cover.BackgroundTransparency = 1
+	cover.BorderSizePixel = 0
+	cover.Size = UDim2.fromScale(1, 1)
+	cover.Visible = false
+	cover.Active = true
+	cover.ZIndex = 20
+	cover.Parent = column
+
+	local function parchmentHalf(name: string, side: string): Frame
+		local panel = Instance.new("Frame")
+		panel.Name = name
+		panel.BackgroundColor3 = IVORY
+		panel.BorderSizePixel = 0
+		panel.Size = UDim2.fromScale(0.5, 1)
+		panel.ZIndex = 20
+		panel.Parent = cover
+		local curl = Instance.new("Frame")
+		curl.Name = "Curl"
+		curl.BackgroundColor3 = CURL
+		curl.BorderSizePixel = 0
+		curl.Size = UDim2.new(0, CURL_WIDTH, 1, 0)
+		curl.Position = if side == "left" then UDim2.fromOffset(0, 0) else UDim2.new(1, -CURL_WIDTH, 0, 0)
+		curl.ZIndex = 21
+		curl.Parent = panel
+		local lip = Instance.new("Frame")
+		lip.Name = "Lip"
+		lip.BackgroundColor3 = CURL_EDGE
+		lip.BorderSizePixel = 0
+		lip.Size = UDim2.new(0, 10, 1, 0)
+		lip.Position = if side == "left" then UDim2.fromOffset(0, 0) else UDim2.new(1, -10, 0, 0)
+		lip.ZIndex = 22
+		lip.Parent = curl
+		return panel
+	end
+
+	local leftHalf = parchmentHalf("Left", "left")
+	local rightHalf = parchmentHalf("Right", "right")
+	rightHalf.Position = UDim2.fromScale(0.5, 0)
+
+	local countLabel = Instance.new("TextLabel")
+	countLabel.Name = "Count"
+	countLabel.BackgroundTransparency = 1
+	countLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+	countLabel.Position = UDim2.fromScale(0.5, 0.5)
+	countLabel.Size = UDim2.fromScale(0.46, 0.46)
+	countLabel.Font = Enum.Font.GothamBold
+	countLabel.TextColor3 = INK
+	countLabel.TextScaled = true
+	countLabel.Text = ""
+	countLabel.ZIndex = 24
+	countLabel.Parent = cover
+	local countScale = Instance.new("UIScale")
+	countScale.Parent = countLabel
+
 	local session: QuestionRules.ClientSession? = nil
 	local buffer = ""
 	local locked = false
@@ -195,6 +258,13 @@ function TypingScreen.bind(root: Frame): () -> ()
 	local sentMark = ""
 	local open = false
 	local trackingId = 0
+	local askedAt = 0
+	local cuedMatch = 0
+	local cuedDigit: {[number]: boolean} = {}
+	local matchMusicStarted = false
+	local matchStartHeard = false
+	local shownDigit: number? = nil
+	local digitShownAt = 0
 	local lastReason: string? = nil
 	local standings: {QuestionRules.Standing} = {}
 	local rankNames: {[number]: string} = {}
@@ -248,6 +318,33 @@ function TypingScreen.bind(root: Frame): () -> ()
 			Players.LocalPlayer:GetAttribute("InMatch") == true,
 			if type(matchId) == "number" then matchId else nil
 		)
+	end
+
+	local function matchPhase(): string?
+		local folder = ReplicatedStorage:FindFirstChild("MatchState")
+		local phase = if folder ~= nil then folder:GetAttribute("Phase") else nil
+		return if type(phase) == "string" then phase else nil
+	end
+
+	local function playStartsAt(): number
+		local folder = ReplicatedStorage:FindFirstChild("MatchState")
+		local starts = if folder ~= nil then folder:GetAttribute("PlayStartsAt") else nil
+		return if type(starts) == "number" then starts else 0
+	end
+
+	local function armedNow(): boolean
+		if Players.LocalPlayer:GetAttribute("InMatch") ~= true then
+			return false
+		end
+		local phase = matchPhase()
+		if phase ~= "Play" and phase ~= "Ready" then
+			return false
+		end
+		local starts = playStartsAt()
+		if starts <= 0 then
+			return phase == "Play"
+		end
+		return Workspace:GetServerTimeNow() >= starts
 	end
 
 	local function colorFromHex(hex: string): Color3
@@ -330,8 +427,11 @@ function TypingScreen.bind(root: Frame): () -> ()
 		if type(endsAt) == "number" then
 			remain = math.max(0, endsAt - Workspace:GetServerTimeNow())
 		end
-		local timeText = Localization.getText("Lobby.TimeLeft", nil, { time = formatTime(remain) })
-		if remain > 0 and remain <= constants.Match.DoubleScoreSeconds then
+		local armed = armedNow()
+		local timeText = Localization.getText("Lobby.TimeLeft", nil, {
+			time = formatTime(if armed then remain else constants.Match.PlaySeconds),
+		})
+		if armed and remain > 0 and remain <= constants.Match.DoubleScoreSeconds then
 			timeText ..= " " .. Localization.getText("Match.DoubleTime")
 		end
 		timeLabel.Text = timeText
@@ -342,7 +442,7 @@ function TypingScreen.bind(root: Frame): () -> ()
 		local rankLine = Localization.getText("Match.MyRank", nil, { rank = rankText })
 		local toggle = if ranksOpen then Localization.getText("Match.HideRanks") else Localization.getText("Match.ShowRanks")
 		rankButton.Text = rankLine .. " " .. toggle
-		if session ~= nil and session.text ~= "" then
+		if armed and session ~= nil and session.text ~= "" then
 			questionText.Text = string.gsub(session.text, "[\r\n]+", " ")
 			pointsLabel.Text = Localization.getText("Match.Points", nil, { points = tostring(session.points) })
 			pointsLabel.TextColor3 = colorFromHex(session.colorHex)
@@ -351,7 +451,7 @@ function TypingScreen.bind(root: Frame): () -> ()
 			inputLabel.Text = if buffer == "" then Localization.getText("Match.TypeHere") else buffer
 			inputLabel.TextTransparency = if buffer == "" then 0.35 else 0
 			inputLabel.TextColor3 = UiChrome.Navy
-		elseif lastReason == "closed" then
+		elseif armed and lastReason == "closed" then
 			questionText.Text = Localization.getText("Match.NoQuestion")
 			pointsLabel.Text = ""
 			questionPanel.ImageColor3 = Color3.new(1, 1, 1)
@@ -368,6 +468,13 @@ function TypingScreen.bind(root: Frame): () -> ()
 		end
 		if lastQuestionHeight > 0 then
 			layoutGloss(lastQuestionHeight, lastTextSize)
+		end
+		if not armed then
+			questionText.Text = ""
+			pointsLabel.Text = ""
+			glossLabel.Text = ""
+			glossLabel.Visible = false
+			inputLabel.Text = ""
 		end
 		renderBoard()
 	end
@@ -415,8 +522,16 @@ function TypingScreen.bind(root: Frame): () -> ()
 	end
 
 	function setDraft(nextText: string)
-		if not open or session == nil then
+		if not open or not armedNow() then
+			buffer = ""
+			pad:setText("")
+			return
+		end
+		if session == nil then
+			nextText = QuestionRules.clip(nextText, QuestionRules.MaxInputLength)
+			buffer = nextText
 			pad:setText(buffer)
+			render()
 			return
 		end
 		nextText = QuestionRules.clip(nextText, QuestionRules.MaxInputLength)
@@ -439,7 +554,7 @@ function TypingScreen.bind(root: Frame): () -> ()
 	end
 
 	function submitEnter()
-		if not open or session == nil or not QuestionRules.acceptEnter(locked, buffer) then
+		if not open or not armedNow() or session == nil or not QuestionRules.acceptEnter(locked, buffer) then
 			return
 		end
 		send()
@@ -509,6 +624,80 @@ function TypingScreen.bind(root: Frame): () -> ()
 		)
 	end
 
+	local function screenOverlay(): boolean
+		return root:GetAttribute("PracticeOpen") == true
+			or root:GetAttribute("SettingsOpen") == true
+			or root:GetAttribute("TutorialOpen") == true
+			or root:GetAttribute("RankOpen") == true
+			or root:GetAttribute("ShopOpen") == true
+	end
+
+	local function presentCountdown()
+		local inMatch = Players.LocalPlayer:GetAttribute("InMatch") == true
+		local phase = matchPhase()
+		local starts = playStartsAt()
+		local folder = ReplicatedStorage:FindFirstChild("MatchState")
+		local matchId = if folder ~= nil then folder:GetAttribute("MatchId") else nil
+		local id = if type(matchId) == "number" then matchId else 0
+		if id ~= cuedMatch then
+			cuedMatch = id
+			table.clear(cuedDigit)
+			shownDigit = nil
+			matchMusicStarted = false
+			matchStartHeard = false
+		end
+		local now = Workspace:GetServerTimeNow()
+		local remain = if starts > 0 then starts - now else 0
+		local inClock = inMatch and starts > 0 and (phase == "Ready" or phase == "Play")
+		if not matchMusicStarted and inClock and MatchCountdown.shouldStartCue(remain) then
+			matchMusicStarted = true
+			SoundManager.startMatchMusic()
+		end
+		local counting = screen.Visible and inClock and remain > 0
+		cover.Visible = counting
+		if not counting then
+			shownDigit = nil
+			countLabel.Visible = false
+			leftHalf.Position = UDim2.fromScale(0, 0)
+			rightHalf.Position = UDim2.fromScale(0.5, 0)
+		else
+			local digit = MatchCountdown.digit(remain)
+			local opened = MatchCountdown.split(remain)
+			if MatchCountdown.playsReady(digit) and MatchCountdown.shouldCue(cuedDigit, digit) then
+				SoundManager.play("MatchReady")
+			end
+			if not matchStartHeard and MatchCountdown.shouldOpenCue(remain) then
+				matchStartHeard = true
+				SoundManager.play("MatchStart")
+			end
+			leftHalf.Position = UDim2.fromScale(-0.5 * opened, 0)
+			rightHalf.Position = UDim2.fromScale(0.5 + 0.5 * opened, 0)
+			if digit == nil or opened > 0 then
+				countLabel.Visible = false
+			else
+				if digit ~= shownDigit then
+					shownDigit = digit
+					digitShownAt = os.clock()
+				end
+				countLabel.Visible = true
+				countLabel.Text = tostring(digit)
+				local scale, rotation = MatchCountdown.digitPose(os.clock() - digitShownAt)
+				countScale.Scale = scale
+				countLabel.Rotation = rotation
+			end
+		end
+		local armed = armedNow()
+		if screen.Visible and armed and id > 0 and session == nil and os.clock() - askedAt > 0.5 then
+			askedAt = os.clock()
+			request:FireServer()
+			scoreRequest:FireServer()
+		end
+		if not inMatch or (phase ~= "Ready" and phase ~= "Play") then
+			cover.Visible = false
+		end
+		pad:setEngaged(screen.Visible and armed and not screenOverlay())
+	end
+
 	local function syncMode()
 		local id = activeMatchId()
 		if id ~= trackingId then
@@ -525,33 +714,25 @@ function TypingScreen.bind(root: Frame): () -> ()
 			table.clear(rankNames)
 			table.clear(rankLanguages)
 			ranksOpen = false
+			askedAt = 0
 			if id > 0 then
 				lastPlayId = id
-				request:FireServer()
-				scoreRequest:FireServer()
 			end
 		end
 		if activeMatchId() ~= pendingLeaveId then
 			pendingLeaveId = 0
 		end
 		leaveButton.Active = pendingLeaveId == 0
-		local overlay = root:GetAttribute("PracticeOpen") == true
-			or root:GetAttribute("SettingsOpen") == true
-			or root:GetAttribute("TutorialOpen") == true
-			or root:GetAttribute("RankOpen") == true
-			or root:GetAttribute("ShopOpen") == true
-		local playing = id > 0 and not overlay
-		if playing ~= open then
-			open = playing
-			pad:setEngaged(open)
-		end
-		pad:setIme(session ~= nil and QuestionRules.usesIme(session.typing))
-		local folder = ReplicatedStorage:FindFirstChild("MatchState")
-		local phase = if folder ~= nil then folder:GetAttribute("Phase") else nil
+		local playing = id > 0 and not screenOverlay()
+		open = playing
+		local typing = if session ~= nil then session.typing else SettingsState.sessionTyping()
+		pad:setIme(playing and QuestionRules.usesIme(typing))
+		local phase = matchPhase()
 		MatchCamera.setOrbit(phase == "Result" and Players.LocalPlayer:GetAttribute("InMatch") == true)
 		MatchCamera.setPlaying(playing)
 		screen.Visible = playing
 		applyLayout()
+		presentCountdown()
 		render()
 	end
 
@@ -660,8 +841,11 @@ function TypingScreen.bind(root: Frame): () -> ()
 		scoreState.OnClientEvent:Connect(onScore),
 		RunService.Heartbeat:Connect(function()
 			pad:syncJump()
-			if screen.Visible then
-				render()
+			if screen.Visible or cover.Visible then
+				presentCountdown()
+				if screen.Visible then
+					render()
+				end
 			end
 		end),
 	}
