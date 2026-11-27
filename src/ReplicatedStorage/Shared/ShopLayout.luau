@@ -18,11 +18,11 @@ local ShopLayout = {}
 
 -- Match the landscape storefront proportions, using the safe height on short phones.
 function ShopLayout.windowSize(width: number, height: number, margin: number): (number, number)
-	local aspect = 1.85
+	local aspect = 2.05
 	local maxWidth = math.max(0, width - 2 * margin)
 	local maxHeight = math.max(0, height - 2 * margin)
 	local fraction = math.clamp(0.77 - 0.19 * (height - 648) / (1080 - 648), 0.58, 0.77)
-	local h = math.min(maxHeight, math.max(204, height * fraction), maxWidth / aspect, 1152 / aspect)
+	local h = math.min(maxHeight, math.max(204, height * fraction), maxWidth / aspect, 1280 / aspect)
 	return math.round(h * aspect), math.round(h)
 end
 
@@ -70,7 +70,7 @@ function ShopLayout.selfCheck()
 		assert(p.margin * 2 + p.title + p.gold + p.tab + p.body + p.action + p.gap * 4 == height)
 	end
 	local desktopWidth = ShopLayout.windowSize(1920, 1080, 20)
-	assert(desktopWidth == 1152)
+	assert(desktopWidth == 1280)
 	local phone = ShopLayout.plan(568, 320)
 	local chrome = phone.margin * 2 + phone.title + phone.gold + phone.tab + phone.action + phone.gap * 4
 	assert(phone.compact and phone.action == 36 and phone.preview >= 120 and phone.list >= 160, "the phone shop keeps a tappable action row")

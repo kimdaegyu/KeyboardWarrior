@@ -11,6 +11,9 @@ local seen = false
 local known = false
 local saveState = "loading"
 local started = false
+local attempt = 0
+local serial: number? = nil
+local failureReason: string? = nil
 local ackRemote: RemoteEvent? = nil
 local listeners: {() -> ()} = {}
 
@@ -30,6 +33,18 @@ end
 
 function TutorialState.saveState(): string
 	return saveState
+end
+
+function TutorialState.attempt(): number
+	return attempt
+end
+
+function TutorialState.serial(): number?
+	return serial
+end
+
+function TutorialState.failureReason(): string?
+	return failureReason
 end
 
 function TutorialState.onChanged(listener: () -> ()): () -> ()
@@ -67,7 +82,18 @@ function TutorialState.start()
 		if message.saveState == "loading" and saveState ~= "loading" then
 			return
 		end
+		if type(message.attempt) == "number" then
+			attempt = message.attempt
+		end
+		if type(message.serial) == "number" then
+			serial = message.serial
+		end
 		saveState = message.saveState
+		if saveState == "unavailable" and type(message.reason) == "string" and message.reason ~= "" then
+			failureReason = message.reason
+		elseif saveState == "ready" or saveState == "saved" then
+			failureReason = nil
+		end
 		if saveState ~= "loading" and saveState ~= "unavailable" then
 			known = true
 			seen = TutorialRules.seenOf(message.seen)

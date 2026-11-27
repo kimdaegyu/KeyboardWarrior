@@ -111,15 +111,54 @@ local function playerControls(): any
 	return nil
 end
 
-local function setControlClaim(name: string, on: boolean)
-	if on then
-		controlClaims[name] = true
-	else
-		controlClaims[name] = nil
+local waitingForControls = false
+local applyControlClaims: () -> ()
+
+local function watchForControls()
+	if waitingForControls then
+		return
 	end
+	waitingForControls = true
+	task.spawn(function()
+		local player = Players.LocalPlayer
+		local scripts = player:FindFirstChild("PlayerScripts")
+		if scripts == nil then
+			local found = player:WaitForChild("PlayerScripts", 5)
+			if found == nil or not found:IsA("PlayerScripts") then
+				waitingForControls = false
+				return
+			end
+			scripts = found
+		end
+		if scripts:FindFirstChild("PlayerModule") ~= nil then
+			waitingForControls = false
+			if playerControls() ~= nil then
+				applyControlClaims()
+			end
+			return
+		end
+		-- The default module can arrive late, or not at all. WaitForChild would warn.
+		local connection: RBXScriptConnection
+		connection = scripts.ChildAdded:Connect(function(child)
+			if child.Name ~= "PlayerModule" then
+				return
+			end
+			connection:Disconnect()
+			waitingForControls = false
+			task.defer(function()
+				if playerControls() ~= nil then
+					applyControlClaims()
+				end
+			end)
+		end)
+	end)
+end
+
+applyControlClaims = function()
 	local controls = playerControls()
 	if controls == nil then
 		controlsReady = false
+		watchForControls()
 		return
 	end
 	controlsReady = true
@@ -137,6 +176,15 @@ local function setControlClaim(name: string, on: boolean)
 			controls:Enable()
 		end)
 	end
+end
+
+local function setControlClaim(name: string, on: boolean)
+	if on then
+		controlClaims[name] = true
+	else
+		controlClaims[name] = nil
+	end
+	applyControlClaims()
 end
 
 local function jumpButtons(): {GuiObject}
@@ -216,6 +264,10 @@ export type Pad = {
 }
 
 local TypingPad = {}
+
+function TypingPad.holdMovement(name: string, on: boolean)
+	setControlClaim(name, on)
+end
 
 function TypingPad.mount(parent: GuiObject, actionName: string, onDraft: (string) -> (), onEnter: () -> ()): Pad
 	local hardware = Instance.new("TextBox")

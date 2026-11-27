@@ -106,6 +106,7 @@ local function payload(userId: number, reason: string)
 		body = worn.body,
 		rim = worn.rim,
 		effect = worn.effect,
+		effectColor = worn.effectColor,
 		items = rows,
 	}
 end

@@ -13,6 +13,7 @@ local Workspace = game:GetService("Workspace")
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local Localization = require(ReplicatedStorage.Shared.Localization)
 local MatchCountdown = require(ReplicatedStorage.Shared.MatchCountdown)
+local MatchDoubleAlert = require(ReplicatedStorage.Shared.MatchDoubleAlert)
 local QuestionRules = require(ReplicatedStorage.Shared.QuestionRules)
 local TypingLayout = require(ReplicatedStorage.Shared.TypingLayout)
 local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
@@ -21,6 +22,7 @@ local SettingsState = require(script.Parent.SettingsState)
 local TypingPad = require(script.Parent.TypingPad)
 
 local TypingScreen = {}
+local doubleHeardMatch = 0
 
 local function formatTime(seconds: number): string
 	local shown = math.max(0, math.ceil(seconds - 1e-4))
@@ -67,19 +69,58 @@ function TypingScreen.bind(root: Frame): () -> ()
 	leaveIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	leaveIcon.Position = UDim2.fromScale(0.5, 0.5)
 
-	local timeLabel = Instance.new("TextLabel")
+	local timeLabel = Instance.new("Frame")
 	timeLabel.Name = "Time"
 	timeLabel.BackgroundColor3 = UiChrome.White
 	timeLabel.BackgroundTransparency = 0.2
-	timeLabel.Font = Enum.Font.GothamMedium
-	timeLabel.TextColor3 = UiChrome.Navy
-	timeLabel.TextXAlignment = Enum.TextXAlignment.Center
-	timeLabel.TextYAlignment = Enum.TextYAlignment.Center
-	timeLabel.Text = ""
-	timeLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	timeLabel.BorderSizePixel = 0
+	timeLabel.ClipsDescendants = true
 	timeLabel.ZIndex = 6
 	UiChrome.round(timeLabel)
 	timeLabel.Parent = column
+	local timeGroup = Instance.new("Frame")
+	timeGroup.Name = "TimeGroup"
+	timeGroup.BackgroundTransparency = 1
+	timeGroup.AnchorPoint = Vector2.new(0.5, 0.5)
+	timeGroup.Position = UDim2.fromScale(0.5, 0.5)
+	timeGroup.AutomaticSize = Enum.AutomaticSize.X
+	timeGroup.Size = UDim2.new(0, 0, 1, 0)
+	timeGroup.ZIndex = 7
+	timeGroup.Parent = timeLabel
+	local timeLayout = Instance.new("UIListLayout")
+	timeLayout.FillDirection = Enum.FillDirection.Horizontal
+	timeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	timeLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	timeLayout.Padding = UDim.new(0, 4)
+	timeLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	timeLayout.Parent = timeGroup
+	local timeValue = Instance.new("TextLabel")
+	timeValue.Name = "TimeValue"
+	timeValue.BackgroundTransparency = 1
+	timeValue.Font = Enum.Font.GothamMedium
+	timeValue.TextColor3 = UiChrome.Navy
+	timeValue.TextXAlignment = Enum.TextXAlignment.Center
+	timeValue.TextYAlignment = Enum.TextYAlignment.Center
+	timeValue.TextScaled = false
+	timeValue.AutomaticSize = Enum.AutomaticSize.X
+	timeValue.Size = UDim2.new(0, 0, 1, 0)
+	timeValue.LayoutOrder = 1
+	timeValue.ZIndex = 7
+	timeValue.Parent = timeGroup
+	local doubleMark = Instance.new("TextLabel")
+	doubleMark.Name = "DoubleTime"
+	doubleMark.BackgroundTransparency = 1
+	doubleMark.Font = Enum.Font.GothamBold
+	doubleMark.TextColor3 = Color3.fromRGB(198, 40, 40)
+	doubleMark.TextXAlignment = Enum.TextXAlignment.Center
+	doubleMark.TextYAlignment = Enum.TextYAlignment.Center
+	doubleMark.TextScaled = false
+	doubleMark.AutomaticSize = Enum.AutomaticSize.X
+	doubleMark.Size = UDim2.new(0, 0, 1, 0)
+	doubleMark.Visible = false
+	doubleMark.LayoutOrder = 2
+	doubleMark.ZIndex = 7
+	doubleMark.Parent = timeGroup
 
 	local scoreLabel = Instance.new("TextLabel")
 	scoreLabel.Name = "MyScore"
@@ -428,13 +469,22 @@ function TypingScreen.bind(root: Frame): () -> ()
 			remain = math.max(0, endsAt - Workspace:GetServerTimeNow())
 		end
 		local armed = armedNow()
-		local timeText = Localization.getText("Lobby.TimeLeft", nil, {
+		timeValue.Text = Localization.getText("Lobby.TimeLeft", nil, {
 			time = formatTime(if armed then remain else constants.Match.PlaySeconds),
 		})
-		if armed and remain > 0 and remain <= constants.Match.DoubleScoreSeconds then
-			timeText ..= " " .. Localization.getText("Match.DoubleTime")
+		local matchId = if folder ~= nil then folder:GetAttribute("MatchId") else nil
+		local id = if type(matchId) == "number" then matchId else 0
+		local role: MatchDoubleAlert.Role = if root:GetAttribute("PracticeOpen") == true
+			then "practice"
+			elseif armed then "player"
+			else "spectator"
+		local show, play, heard = MatchDoubleAlert.observe(doubleHeardMatch, id, role, remain, constants.Match.DoubleScoreSeconds)
+		doubleHeardMatch = heard
+		doubleMark.Visible = show
+		doubleMark.Text = if show then Localization.getText("Match.DoubleTime") else ""
+		if play then
+			SoundManager.play("MatchDoubleStart")
 		end
-		timeLabel.Text = timeText
 		local self = mine()
 		local total = if self ~= nil then self.score else (if session ~= nil then session.total else 0)
 		local rankText = if self ~= nil then tostring(self.rank) else "-"
@@ -593,9 +643,11 @@ function TypingScreen.bind(root: Frame): () -> ()
 		local iconSide = math.max(1, math.floor(side * 0.62))
 		leaveIcon.Size = UDim2.fromOffset(iconSide, iconSide)
 		timeLabel.Position = UDim2.fromOffset(infoX, 0)
-		timeLabel.TextSize = math.clamp(plan.timeHeight - 8, 12, if plan.compact then 18 else 28)
-		scoreLabel.TextSize = timeLabel.TextSize
-		rankButton.TextSize = timeLabel.TextSize
+		local timeSize = math.clamp(plan.timeHeight - 8, 12, if plan.compact then 18 else 28)
+		timeValue.TextSize = timeSize
+		doubleMark.TextSize = timeSize * 2
+		scoreLabel.TextSize = timeSize
+		rankButton.TextSize = timeSize
 		timeLabel.Size = UDim2.fromOffset(cell, side)
 		scoreLabel.Position = UDim2.fromOffset(infoX + cell, 0)
 		scoreLabel.Size = UDim2.fromOffset(cell, side)
@@ -745,7 +797,7 @@ function TypingScreen.bind(root: Frame): () -> ()
 		session, buffer = QuestionRules.applyClient(session, buffer, message, matchId)
 		if matchId > 0 and message.matchId == matchId and previous > 0 and message.issue == previous then
 			if message.ok and session and session.issue ~= previous then
-				SoundManager.play("UIConfirm")
+				SoundManager.play("MatchTypeSuccess")
 			elseif message.reason == "mismatch" and locked then
 				SoundManager.play("UIError")
 			end

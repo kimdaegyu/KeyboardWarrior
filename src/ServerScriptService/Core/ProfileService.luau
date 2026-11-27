@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RewardRules = require(ReplicatedStorage.Shared.RewardRules)
+local ShopRules = require(ReplicatedStorage.Shared.ShopRules)
 local SettingsRules = require(ReplicatedStorage.Shared.SettingsRules)
 local TableData = require(ReplicatedStorage.Shared.TableData)
 local TitleRules = require(ReplicatedStorage.Shared.TitleRules)
@@ -20,6 +21,9 @@ local sessions: {[number]: any} = {}
 local gone: {[number]: boolean} = {}
 local failed: {[number]: string} = {}
 local readyHandlers: {(number) -> ()} = {}
+local failedHandlers: {(number) -> ()} = {}
+local opening: {[number]: boolean} = {}
+local attempts: {[number]: number} = {}
 local saveRunning: {[number]: boolean} = {}
 local savePending: {[number]: boolean} = {}
 local saveWaiters: {[number]: {thread}} = {}
@@ -82,6 +86,12 @@ local function copyProfile(cache: any): Profile
 	if type(cache.effect) == "string" then
 		profile.effect = cache.effect
 	end
+	if type(cache.effectColor) == "string" then
+		profile.effectColor = cache.effectColor
+	end
+	if cache.shopColorsMigrated == true then
+		profile.shopColorsMigrated = true
+	end
 	TitleRules.copyInto(profile, cache)
 	return profile
 end
@@ -96,30 +106,57 @@ end
 
 local function normalize(document: any)
 	local cache = document:GetCache()
-	if type(cache.grants) == "table" then
-		return
+	local profile = copyProfile(cache)
+	local migrated = ShopRules.migrate(profile)
+	if migrated ~= profile or type(cache.grants) ~= "table" then
+		document:SetCache(migrated)
 	end
-	document:SetCache(copyProfile(cache))
+end
+
+local function notifyReady(userId: number)
+	for _, handler in readyHandlers do
+		handler(userId)
+	end
+end
+
+local function notifyFailed(userId: number)
+	for _, handler in failedHandlers do
+		handler(userId)
+	end
 end
 
 local function open(player: Player)
 	local userId = player.UserId
+	if opening[userId] then
+		return
+	end
+	opening[userId] = true
+	attempts[userId] = (attempts[userId] or 0) + 1
 	local document = PlayerStore.getDocument(userId)
-	local result = document:Open()
+	local callOk, result = pcall(function()
+		return document:Open()
+	end)
+	opening[userId] = false
 	if player.Parent == nil then
 		gone[userId] = true
 	end
-	if result.success ~= true then
-		failed[userId] = if type(result.reason) == "string" then result.reason else "open-failed"
+	-- A failed read is remembered and is not replaced with the default profile.
+	if not document:IsOpen() then
+		local reason = "open-failed"
+		if callOk and type(result) == "table" and type(result.reason) == "string" then
+			reason = result.reason
+		end
+		failed[userId] = reason
+		if player.Parent ~= nil then
+			notifyFailed(userId)
+		end
 		return
 	end
 	failed[userId] = nil
 	sessions[userId] = document
 	normalize(document)
 	publishBalances(userId, document:GetCache())
-	for _, handler in readyHandlers do
-		handler(userId)
-	end
+	notifyReady(userId)
 	if gone[userId] and document:IsOpen() and not document:IsClosing() then
 		sessions[userId] = nil
 		document:Close()
@@ -128,6 +165,28 @@ end
 
 function ProfileService.setReadyHandler(handler: (number) -> ())
 	table.insert(readyHandlers, handler)
+end
+
+function ProfileService.setFailedHandler(handler: (number) -> ())
+	table.insert(failedHandlers, handler)
+end
+
+function ProfileService.attempt(userId: number): number
+	return attempts[userId] or 0
+end
+
+-- A failed read is opened again. It is not replaced with the default profile.
+function ProfileService.retry(userId: number)
+	while opening[userId] do
+		task.wait(0.05)
+	end
+	if ProfileService.isOpen(userId) or gone[userId] then
+		return
+	end
+	local player = Players:GetPlayerByUserId(userId)
+	if player ~= nil then
+		open(player)
+	end
 end
 
 function ProfileService.start()

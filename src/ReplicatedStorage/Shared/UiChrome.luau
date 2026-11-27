@@ -10,9 +10,10 @@ UiChrome.Navy = Color3.fromRGB(23, 41, 69)
 UiChrome.White = Color3.new(1, 1, 1)
 UiChrome.Blue = Color3.fromRGB(36, 91, 205)
 UiChrome.Yellow = Color3.fromRGB(255, 211, 74)
+UiChrome.Gray = Color3.fromRGB(88, 96, 110)
 
 function UiChrome.ink(role: string): Color3
-	return if role == "selected" then UiChrome.White else UiChrome.Navy
+	return if role == "selected" or role == "short" then UiChrome.White else UiChrome.Navy
 end
 
 function UiChrome.round(gui: GuiObject, radius: number?)
@@ -23,7 +24,7 @@ function UiChrome.round(gui: GuiObject, radius: number?)
 end
 
 function UiChrome.paint(gui: GuiObject, role: string)
-	gui.BackgroundColor3 = if role == "primary" then UiChrome.Yellow elseif role == "selected" then UiChrome.Blue else UiChrome.White
+	gui.BackgroundColor3 = if role == "primary" then UiChrome.Yellow elseif role == "selected" then UiChrome.Blue elseif role == "short" then UiChrome.Gray else UiChrome.White
 	gui.BackgroundTransparency = 0
 	gui.BorderSizePixel = 0
 	if gui:IsA("ImageLabel") or gui:IsA("ImageButton") then

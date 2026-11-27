@@ -148,7 +148,7 @@ local function check(value: any)
 	local validRecordLanguage = recordLanguage == nil or (type(recordLanguage) == "string" and isLanguageCode(string.lower(recordLanguage)))
 	local economy = validRecordLanguage and isCount(value.gold) and isCount(value.exp) and (value.bestScoreCpm == nil or isCount(value.bestScoreCpm)) and isCount(value.bestScore) and isGrantList(value.grants)
 	local settings = isUiLocale(value.uiLocale) and isGloss(value.gloss) and isTyping(value.typing) and isSeen(value.tutorialSeen) and isSeen(value.ranked) and isVolume(value.bgmVolume) and isVolume(value.sfxVolume)
-	local shop = isOwnedList(value.owned) and isSlot(value.body) and isSlot(value.rim) and isSlot(value.effect)
+	local shop = isOwnedList(value.owned) and isSlot(value.body) and isSlot(value.rim) and isSlot(value.effect) and isSlot(value.effectColor) and isSeen(value.shopColorsMigrated)
 	local titles = isTitleList(value.titles) and isTitleList(value.titleGrantIds) and isTitleMode(value.titleMode) and isEquippedTitle(value.equippedTitle) and isGrantId(value.titleGrantId)
 	return economy and settings and shop and titles, value
 end

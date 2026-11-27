@@ -83,7 +83,7 @@ def check_data(folder):
         return True
 
     shop_rows = read_rows(folder, "ShopDataSheet", "Id Category Currency Price Enabled PlatformProductId Release Color")
-    categories = {"Body", "Rim", "Effect"}
+    categories = {"Body", "Rim", "Effect", "EffectColor"}
     for row in shop_rows:
         require(row["Category"] in categories, f"Unknown shop category {row}")
         require(rgb_ok(row["Color"]), f"Invalid shop color {row}")
@@ -101,33 +101,16 @@ def check_data(folder):
         if row["Enabled"] == "1" and row["Currency"] == "Robux":
             require(count(row, "PlatformProductId") > 0, f"Missing product {row}")
     by_shop = {row["Id"]: row for row in shop_rows}
-    require(
-        by_shop["starter_body"]["Release"] == "Default"
-        and by_shop["starter_rim"]["Release"] == "Default"
-        and by_shop["starter_effect"]["Release"] == "Default",
-        "starter cosmetics stay free defaults",
-    )
-    require(
-        by_shop["pilot_body"]["Price"] == "20"
-        and by_shop["pilot_rim"]["Price"] == "30"
-        and by_shop["pilot_effect"]["Price"] == "40"
-        and by_shop["pilot_body"]["Release"] == "Studio"
-        and by_shop["pilot_rim"]["Release"] == "Studio"
-        and by_shop["pilot_effect"]["Release"] == "Studio",
-        "pilot samples sell only in Studio at the short-play prices",
-    )
-    require(by_shop["starter_rim"]["Color"] == "0;0;0" and by_shop["starter_effect"]["Color"] == "0;0;0", "starter rim and effect keep the hidden color token")
-    releases = {}
-    for row in shop_rows:
-        releases[row["Release"]] = releases.get(row["Release"], 0) + 1
-    require(releases.get("Default") == 3 and releases.get("Studio") == 3 and releases.get("Live") == 30, "default, studio, and live shop rows stay separated")
-    live_gold = [row for row in shop_rows if row["Release"] == "Live" and row["Currency"] == "Gold" and row["Enabled"] == "1"]
-    require(len(live_gold) == 20, "live gold sales are the body and effect rows")
-    body_prices = sorted(int(row["Price"]) for row in live_gold if row["Category"] == "Body")
-    effect_prices = sorted(int(row["Price"]) for row in live_gold if row["Category"] == "Effect")
-    require(body_prices[0] == 100 and body_prices[-1] == 2000 and len(body_prices) == 10, "live body prices span the opening range")
-    require(effect_prices[0] == 150 and effect_prices[-1] == 2250 and len(effect_prices) == 10, "live effect prices span the opening range")
-    require(by_shop["effect_sun_gold"]["Price"] == "2250" and by_shop["effect_sun_gold"]["Color"] == "255;226;114" and by_shop["effect_sun_gold"].get("EffectPresetId") == "digits", "golden digits keeps its price, color, and preset")
+    defaults = {row["Category"]: row["Id"] for row in shop_rows if row["Release"] == "Default"}
+    require(defaults == {"Body": "starter_body", "Rim": "starter_rim", "Effect": "starter_effect", "EffectColor": "starter_effectcolor"}, "one starter per slot")
+    require(len(by_shop) == len(shop_rows) and sum(row["Release"] == "Default" for row in shop_rows) == 4, "unique products and defaults")
+    for prefix, category in (("body_", "Body"), ("effectcolor_", "EffectColor")):
+        offers = [row for row in shop_rows if row["Release"] == "Live" and row["Category"] == category]
+        require(len(offers) == 10 and all(row["Enabled"] == "1" and row["Currency"] == "Gold" for row in offers), f"ten live {category} colors")
+        require(by_shop[prefix + "black"]["Color"] == "0;0;0", f"{category} includes black")
+    digits = by_shop["effect_number"]
+    require(digits["Category"] == "Effect" and digits["Price"] == "2250" and digits["Color"] == "200;178;145" and digits["EffectPresetId"] == "digits", "digits has its own base color")
+    require(by_shop["rim_title_09"]["Color"] == "0;0;0", "ninth achievement grants the black rim")
     achievements = read_rows(folder, "AchievementDataSheet", "Id TitleKey Score ShopId RobloxBadgeId itemId")
     item_ids = {row["Id"] for row in read_rows(folder, "ItemDataSheet", "Id Key")}
     expected_scores = ["200", "500", "700", "900", "1000", "1100", "1200", "1300", "1400", "1500"]
@@ -247,6 +230,7 @@ def check_countdown():
     require("ReadySeconds = 3" in constants, "ready time lives in IngameConstants")
     match = (ROOT / "src/ServerScriptService/Core/MatchService.luau").read_text(encoding="utf-8")
     require('Rest = "Ready"' in match and "prepareMatch" in match and "revealMatch" in match, "ready places players before the question opens")
+    require("holdEmptyRest" in match and "nextAfterRest" in match and "MATCH.RestSeconds" in match, "zero players extend rest and do not open ready")
     require('phase ~= "Play" and phase ~= "Ready"' in match, "ready leave cancels the prepared match")
     service = (ROOT / "src/ServerScriptService/Core/QuestionService.luau").read_text(encoding="utf-8")
     require(
@@ -284,6 +268,45 @@ def check_cheat():
     require(server.index("if not RunService:IsStudio() then") < server.index('Instance.new("RemoteEvent")'), "published servers do not create CheatRequest")
     require('action == "reset"' in server and 'action == "gold"' in server and "parseGold" in server, "reset and gold stay on the server")
     require("CheatScreen" in bootstrap and "CheatService" in server_boot, "cheat is wired on both sides")
+
+
+def check_loading():
+    constants = (SHARED / "IngameConstants.luau").read_text(encoding="utf-8")
+    for token in (
+        "FadeOutSeconds = 0.35",
+        "PlayerDataTimeoutSeconds = 30",
+        "LobbyHudTimeoutSeconds = 20",
+        "DecorativeTimeoutSeconds = 4",
+        "TitleCenterX = 0.73",
+        "TitleCenterY = 0.30",
+        "TitleWidthScale = 0.40",
+    ):
+        require(token in constants, f"Loading timing missing: {token}")
+    project = (ROOT / "default.project.json").read_text(encoding="utf-8")
+    require('"ReplicatedFirst"' in project and "src/ReplicatedFirst" in project, "ReplicatedFirst must be mapped")
+    with (ROOT / "src/localization/CoreStrings.csv").open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    by_key = {row["Key"]: row for row in rows}
+    for key in ("Loading.PlayerData", "Loading.Lobby", "Loading.DataFailed", "Loading.HudFailed", "Loading.Retry", "Loading.Title"):
+        require(key in by_key and by_key[key]["ko"].strip() and by_key[key]["Source"].strip(), f"Missing string {key}")
+    require("{code}" in by_key["Loading.ErrorCode"]["Source"], "Loading error code placeholder")
+    art = (SHARED / "LoadingArt.luau").read_text(encoding="utf-8")
+    require("BackgroundImage" in art and "TitleImage" in art, "Loading art ids")
+    first = (ROOT / "src/ReplicatedFirst/LoadingScreenBootstrap.client.luau").read_text(encoding="utf-8")
+    require(first.index("Typing GOD") < first.index("RemoveDefaultLoadingScreen"), "Show the title before removing the default cover")
+    require("TeleportService" not in first, "This place does not hand off a teleport gui")
+    session = (ROOT / "src/StarterPlayerScripts/LoadingSessionController.luau").read_text(encoding="utf-8")
+    require("MatchService" not in session and "TeleportService" not in session, "Loading must not gate matches or teleport")
+    require("LobbyHudReady" in session and "DecorativeTimeoutSeconds" in session, "Loading waits for the lobby signal and caps decorative art")
+    profile = (ROOT / "src/ServerScriptService/Core/ProfileService.luau").read_text(encoding="utf-8")
+    retry = profile.split("function ProfileService.retry", 1)[1].split("function ProfileService.start", 1)[0]
+    require("SetCache" not in retry, "A failed read must not be saved as the default profile")
+    hud = (ROOT / "src/StarterPlayerScripts/LobbyHud.luau").read_text(encoding="utf-8")
+    require(hud.index("Activated:Connect") < hud.index("LobbyHudReady"), "Lobby ready is recorded after the button handlers")
+    bootstrap = (ROOT / "src/StarterPlayerScripts/Bootstrap.client.luau").read_text(encoding="utf-8")
+    require("LobbyHudReady" not in bootstrap, "SafeRoot creation must not mark the lobby ready")
+    tutorial = (ROOT / "src/StarterPlayerScripts/TutorialScreen.luau").read_text(encoding="utf-8")
+    require("LoadingCover" in tutorial, "The tutorial waits for the loading cover")
 
 
 def check_lobby_copy():
@@ -389,6 +412,12 @@ def check_m1_rules():
         select_participants([{"userId": 1, "inZone": False, "waitStartedAt": 0}], max_participants, min_participants) == [],
         "empty cycle",
     )
+    def next_after_rest(count):
+        return "Ready" if count > 0 else "Rest"
+
+    require(next_after_rest(0) == "Rest" and next_after_rest(1) == "Ready" and next_after_rest(12) == "Ready", "zero players wait another rest")
+    rules = (SHARED / "MatchRules.luau").read_text(encoding="utf-8")
+    require('nextAfterRest(0) == "Rest"' in rules and 'nextAfterRest(#solo) == "Ready"' in rules, "rest restart is in the shared rules")
     look = (SHARED / "PadLook.luau").read_text(encoding="utf-8")
     body = look[look.find("function PadLook.apply"):look.find("clearNamed(pad, \"PadRim\")")]
     require("Enum.Material.Asphalt" in body and "Enum.Material.Neon" not in body, "arena pad bodies use asphalt")
@@ -727,6 +756,7 @@ def check_m2_rules():
     require("InputBegan" in pad and "Enum.KeyCode.O" in pad and "Enum.KeyCode.I" in pad, "camera zoom keys still reach the draft on touch devices")
     require("InputPress.event" in pad and "InputPress.sample" in pad and "IsKeyDown" in pad and "releasesHold" in pad, "O uses the shared press and ownership rules")
     require('UnbindAction("RbxCameraKeypress")' in pad and "setInputEnabled" in pad, "typing releases the camera zoom keys")
+    require('WaitForChild("PlayerModule")' not in pad and "ChildAdded" in pad, "a missing PlayerModule does not warn")
     require("recentlyHandled" not in pad and "0.02" not in pad, "a second O is not dropped by a fixed time window")
     require("setIme" in pad and "utf8.offset" in pad and "HangulInput" in pad and "settleField" in pad, "Korean assembly uses the typed syllable and still settles once")
     focus = pad[pad.find("hardware.FocusLost"):pad.find("local ownership")]
@@ -738,6 +768,11 @@ def check_m2_rules():
     require("TypingLayout.plan" in typing and "CompactHeight" in typing and "Match.TypeHere" in typing, "shared layout")
     require("acceptEnter" in typing and "autoSubmits" in typing and "usesIme" in typing and "settleField" in typing and "MatchCamera.setPlaying" in typing and "screen.BackgroundTransparency = 1" in typing, "the match returns focus and shows the arena")
     require("size.Y - plan.margin - plan.keyBlock" in typing, "the touch keyboard stays at the bottom of the arena gap")
+    require('SoundManager.play("MatchDoubleStart")' in typing and "doubleHeardMatch" in typing and "DoubleScoreSeconds" in typing and "timeText ..=" not in typing, "the double-score mark plays once from the real remaining time")
+    require("9119902088" in (SHARED / "Table/SoundDataSheet.txt").read_text(encoding="utf-8") and "MatchDoubleStart" in (SHARED / "Table/SoundDataSheet.txt").read_text(encoding="utf-8"), "MatchDoubleStart uses the fever cue")
+    with (ROOT / "src/localization/CoreStrings.csv").open(encoding="utf-8", newline="") as stream:
+        double_copy = {row["Key"]: row for row in csv.DictReader(stream)}
+    require(double_copy["Match.DoubleTime"]["Source"] == "2X" and double_copy["Match.DoubleTime"]["ko"] == "2배", "the multiplier copy stays 2X and 2배")
     practice = (ROOT / "src/StarterPlayerScripts/PracticeScreen.luau").read_text(encoding="utf-8")
     require("MatchCamera" not in practice, "practice does not use the match camera")
     require("sessionTyping" in practice and "setIme" in practice and "usesIme" in practice and "settleField" in practice, "practice uses the session typing language")
@@ -747,10 +782,19 @@ def check_m2_rules():
     require("BindToRenderStep" in camera and "UnbindFromRenderStep" in camera and "HumanoidRootPart" in camera and "local rise" in camera, "the match camera follows the character height once")
     rise = (ROOT / "src/StarterPlayerScripts/FloorRise.luau").read_text(encoding="utf-8")
     require('SoundManager.play("PadLevelUp")' in rise and "LocalPlayer.UserId" in rise, "only the local floor step plays the level sound")
-    sound_rows = (ROOT / "src/ReplicatedStorage/Shared/Table/SoundDataSheet.txt").read_text(encoding="utf-8").splitlines()
-    pad_level = next(line for line in sound_rows if line.startswith("13,PadLevelUp,"))
-    pad_columns = pad_level.split(",")
-    require(pad_columns[5] == "" and pad_columns[9] == "0" and pad_columns[3] == "SFX", "PadLevelUp waits for a real asset and does not loop")
+    sounds = read_rows(SHARED / "Table", "SoundDataSheet", "SoundKey AssetId Category Looped Enabled")
+    pad = [row for row in sounds if row["SoundKey"] == "PadLevelUp"]
+    require(len(pad) == 1, "exactly one PadLevelUp cue")
+    cue = pad[0]
+    require(cue["Category"] == "SFX" and cue["Looped"] == "0" and cue["Enabled"] == "1"
+            and cue["AssetId"].isascii() and cue["AssetId"].isdecimal() and int(cue["AssetId"]) > 0,
+            "PadLevelUp is an enabled one-shot SFX with a configured asset")
+    answer = [row for row in sounds if row["SoundKey"] == "MatchTypeSuccess"]
+    require(len(answer) == 1 and answer[0]["AssetId"] == "85431867458082" and answer[0]["Category"] == "SFX"
+            and answer[0]["Looped"] == "0" and answer[0]["Enabled"] == "1",
+            "a correct match answer has its own one-shot")
+    require('SoundManager.play("MatchTypeSuccess")' in typing and 'SoundManager.play("UIConfirm")' not in typing, "match success does not reuse the confirm cue")
+    require('SoundManager.play("UIConfirm")' in practice, "practice success keeps the confirm cue")
     bootstrap = (ROOT / "src/StarterPlayerScripts/Bootstrap.client.luau").read_text(encoding="utf-8")
     require("TypingScreen" in bootstrap and "SafeRoot" in bootstrap, "typing screen mounts on SafeRoot")
     lobby = (ROOT / "src/StarterPlayerScripts/LobbyHud.luau").read_text(encoding="utf-8")
@@ -1018,9 +1062,11 @@ def apply_grant(profile, settlement_id, gold, exp, score, finished):
         updated["tutorialSeen"] = profile["tutorialSeen"]
     if isinstance(profile.get("owned"), list):
         updated["owned"] = list(profile["owned"])
-    for slot in ("body", "rim", "effect"):
+    for slot in ("body", "rim", "effect", "effectColor"):
         if isinstance(profile.get(slot), str):
             updated[slot] = profile[slot]
+    if profile.get("shopColorsMigrated") is True:
+        updated["shopColorsMigrated"] = True
     return updated, True
 
 
@@ -1086,6 +1132,8 @@ def profile_ok(value):
         and slot_ok(value.get("body"))
         and slot_ok(value.get("rim"))
         and slot_ok(value.get("effect"))
+        and slot_ok(value.get("effectColor"))
+        and (value.get("shopColorsMigrated") is None or isinstance(value.get("shopColorsMigrated"), bool))
         and volume_ok(value.get("bgmVolume"))
         and volume_ok(value.get("sfxVolume"))
         and (value.get("titleMode") in (None, "auto", "manual"))
@@ -1094,11 +1142,20 @@ def profile_ok(value):
     )
 
 
+def result_summary_height(compact):
+    text_size = 14 if compact else 18
+    place_size = 22 if compact else 32
+    scale = 2
+    body = (text_size + 6) * scale + (text_size + 8) * scale + (text_size + 8) * scale + 12 + (text_size + 4) * scale
+    bottom = 20 if compact else 14
+    return 8 + (place_size + 4) + body + bottom
+
+
 def result_plan(width, height):
     compact = height <= 430 or width <= 760
     margin = 6 if compact else 16
     gap = 4
-    summary = 148 if compact else 168
+    summary = result_summary_height(compact)
     list_height = height - margin * 2 - summary - gap
     if list_height < 72:
         summary = max(96, height - margin * 2 - gap - 72)
@@ -1150,7 +1207,7 @@ def check_m4_rules():
     require(zero_row["score"] == 0 and answer_reward(rates, 0, 0, True) == (0, 0), "a scoreless finisher stays on the result")
 
     phone = result_plan(568, 320)
-    require(phone["summaryHeight"] == 148 and phone["listHeight"] == 156, "568×320 shows the summary before the scrolling list")
+    require(phone["summaryHeight"] == 230 and phone["listHeight"] == 74, "568×320 shows the summary before the scrolling list")
     require(phone["margin"] * 2 + phone["summaryHeight"] + phone["gap"] + phone["listHeight"] == 320, "the result screen fits 568×320")
     desktop = result_plan(1366, 768)
     require(desktop["listHeight"] > phone["listHeight"], "a wide result list has more room")
@@ -1168,6 +1225,9 @@ def check_m4_rules():
     require("RewardService.finalize" in match and "ProfileService.close" in match, "result settlement is outside the per-answer path")
     screen = (ROOT / "src/StarterPlayerScripts/ResultScreen.luau").read_text(encoding="utf-8")
     require("DataStore" not in screen and "PlayerStore" not in screen and "SetCache" not in screen, "the result UI only reads")
+    layout = (SHARED / "ResultLayout.luau").read_text(encoding="utf-8")
+    require("detailScale = 2" in layout and "ResultLayout.detailScale" in screen, "result details below the place line are double size")
+    require("placeLabel.TextSize = placeSize" in screen and "(textSize + 2) * scale" in screen and "(textSize - 1) * scale" in screen, "place stays the same and the detail text uses the scale")
     require('current.saveState == "saved"' in screen and "Result.Saved" in screen and "Result.Saving" in screen, "save complete is a distinct state")
     for path in (
         SHARED / "RewardRules.luau",
@@ -1635,6 +1695,8 @@ def check_settings_rules():
     require('saveState == "saved"' not in screen and "Settings.Saved" in screen, "saved copy is selected from the server state")
     require('state == "saved"' in screen, "save complete is a distinct settings state")
     require("ScrollingFrame" in screen and "Settings.Back" in screen and "koreanButton" not in screen and "Settings.MobileInput" in screen and "English (QWERTY)" in screen, "language choices use one scrolling list and identify the mobile keyboard")
+    require("applyButton" not in screen and "SettingsState.queue" in screen and "SettingsState.flush" in screen and "ListInset" in screen, "settings save themselves and language rows keep a stroke margin")
+    require("function SettingsState.queue" in state and "awaiting" in state and "function SettingsState.flush" in state, "a late response does not replace a newer choice")
     require("Settings.MusicVolume" in screen and "Settings.SoundEffectsVolume" in screen and "UIConfirm" in screen and "setVolumes" in screen, "volume rows preview on this client and confirm a released effect")
     require('usedHeight(plan, #rows)' in screen and "#rows * plan.stride" in screen, "settings height follows the real row count")
     sound = (ROOT / "src/StarterPlayerScripts/SoundManager.luau").read_text(encoding="utf-8")
@@ -1655,7 +1717,7 @@ def check_settings_rules():
     design = (ROOT / "docs/GameDesign.ko.md").read_text(encoding="utf-8")
     harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
     require("설정은 상단 기본 버튼 바로 오른쪽에서 연다" in design, "the settings pilot is recorded")
-    require("저장 완료는 저장이 성공한 뒤에만" in harness, "the settings checks are recorded")
+    require("저장 완료는 저장이 성공한 뒤에만" in harness and "대기 중인 변경을 즉시 저장" in harness and "적용 버튼은 없다" in harness, "the settings checks are recorded")
     require("언어 한 개를 추가할 때" in harness, "adding a language has a recorded checklist")
     with (ROOT / "src/localization/CoreStrings.csv").open(encoding="utf-8", newline="") as stream:
         copy = {row["Key"]: row for row in csv.DictReader(stream)}
@@ -1694,9 +1756,10 @@ def check_tutorial():
     released = [dict(row, Enabled="1") for row in rows]
     released_ids = [row["Id"] for row in sorted(released, key=lambda row: int(row["SortOrder"]))]
     require(len(released_ids) == 4, "enabling the shop page makes four steps")
-    margin, gap, title, body, step, row = 8, 4, 22, 64, 16, 36
-    panel = gap * 2 + title + body + step + row + gap * 3
-    require(320 - margin - panel >= 96 and panel + margin <= 320 and body >= 48, "568×320 shows the circle and the done button")
+    margin, gap, title, image, step, row = 8, 4, 22, 148, 16, 36
+    body = image - title - gap
+    panel = gap + image + gap + step + gap + row + gap
+    require(panel + margin * 2 <= 320 and body >= 48 and image > title, "568×320 keeps the centered card and the done button on screen")
     profile = {"schemaVersion": 1, "gold": 4, "exp": 9, "bestScore": 8, "grants": ["a"], "uiLocale": "ko", "gloss": "ko"}
 
     def acknowledge(source):
@@ -1729,6 +1792,8 @@ def check_tutorial():
     require('SetAttribute("SettingsOpen"' not in screen and "SettingsState.apply" not in screen, "replay does not apply settings")
     require("DoubleScoreSeconds" in screen and "EndScoreMultiplier" in screen, "the double-score copy reads the match constants")
     require("ScrollingFrame" in screen and "Tutorial.Done" in screen, "the body scrolls above the done button")
+    require("Enum.ScaleType.Fit" in screen and "TutorialLayout.presentation" in screen and 'figure.Image = ""' in screen, "the figure is square, paired by step id, and cleared before the next page")
+    require(".png" not in screen, "a tutorial page does not use a local file name")
     for banned in ("DataStore", "PlayerStore", "SetCache", "QuestionSubmit"):
         require(banned not in screen, f"tutorial UI must not call {banned}")
     lobby = (ROOT / "src/StarterPlayerScripts/LobbyHud.luau").read_text(encoding="utf-8")
@@ -1881,6 +1946,9 @@ def check_shop():
     require(chrome + (320 - chrome) <= 320 and 320 - chrome >= 72 and action == 36, "568×320 keeps the shop action outside the list")
     service = (ROOT / "src/ServerScriptService/Core/ShopService.luau").read_text(encoding="utf-8")
     require("ProfileService.replace" in service and "ProfileService.commit" not in service and "IsStudio" in service, "shop writes do not settle a match reward")
+    require("effectColor = worn.effectColor" in service, "the shop state includes the effect color slot")
+    rules = (SHARED / "ShopRules.luau").read_text(encoding="utf-8")
+    require("function ShopRules.migrate" in rules and "effectColor" in rules, "effect color is a saved slot")
     require('reason == "bought"' in service and 'action == "equip"' in service, "buy and equip are different server actions")
     match = (ROOT / "src/ServerScriptService/Core/MatchService.luau").read_text(encoding="utf-8")
     lock = match[match.find("local function lockParticipants"):match.find("local function returnParticipant")]
@@ -1893,6 +1961,12 @@ def check_shop():
     screen = (ROOT / "src/StarterPlayerScripts/ShopScreen.luau").read_text(encoding="utf-8")
     require("ViewportFrame" in screen and "ScrollingFrame" in screen and "blockedByMatch" in screen, "the shop previews a pad and scrolls the list")
     require("DigitPadEffect.cell" in screen and "BasePad" in screen and "ClipsDescendants = true" in screen and "DigitPadEffect.project" in screen and "ImageRectOffset" in screen, "the shop preview uses the same atlas cell")
+    require("EffectColorTab" in screen and 'swatch.Name = "Swatch"' in screen and "ProductArt" not in screen, "rows show a color chip and the preview has no product icon")
+    require("ListInset" in screen and "Shop.ShortGold" in screen and "TitleState.auto" not in screen, "product strokes stay inside the list and short gold cannot buy")
+    require('touchSink.Modal = true' in screen and "list.Active = true" in screen and 'TypingPad.holdMovement("Shop"' in screen, "an open shop on touch consumes the drag before the joystick")
+    require("function TypingPad.holdMovement" in (ROOT / "src/StarterPlayerScripts/TypingPad.luau").read_text(encoding="utf-8"), "movement claims stay shared with the typing pad")
+    result_ui = (ROOT / "src/StarterPlayerScripts/ResultScreen.luau").read_text(encoding="utf-8")
+    require("titleBox" not in result_ui and "TitleEarn" in result_ui and "noticeTitles" in result_ui, "new titles toast outside the result body")
     atlas = (SHARED / "DigitPadEffect.luau").read_text(encoding="utf-8")
     require("DigitPadEffect.ImageId" in atlas and "digits_atlas.png" in atlas and "((n - 1) % 4) * 64" in atlas and "math.floor((n - 1) / 4) * 64" in atlas, "one atlas id feeds the shared digit cell")
     close_fn = screen[screen.find("closeButton.Activated"):screen.find("buyButton.Activated")]
@@ -1908,6 +1982,8 @@ def check_shop():
     harness = (ROOT / "docs/Harness.ko.md").read_text(encoding="utf-8")
     require("Studio에서만 판매" in design and "한 번만 차감" in design and "수명 0.85초" in design, "the shop pilot is recorded")
     require("한 번만 차감" in harness and "20골드" in harness and "수명 0.85초" in harness, "the shop checks are recorded")
+    require("결과창 본문에는 타이틀을 두지 않는다" in harness, "the title notice is recorded")
+    require("이동 조이스틱은 받지 않는다" in harness, "the shop touch sink is recorded")
     with (ROOT / "src/localization/CoreStrings.csv").open(encoding="utf-8", newline="") as stream:
         copy = {row["Key"]: row for row in csv.DictReader(stream)}
     for key in (
@@ -1924,6 +2000,8 @@ def check_shop():
         "Shop.Loading",
         "Shop.Processing",
         "Shop.Funds",
+        "Shop.ShortGold",
+        "Title.Earned",
         "Shop.Closed",
         "Shop.Unavailable",
         "Shop.Name.starter_body",
@@ -1939,7 +2017,10 @@ def check_shop():
     ):
         require(key in copy and copy[key]["Source"].strip() and copy[key]["ko"].strip(), f"Missing string {key}")
     require("{price}" in copy["Shop.Buy"]["ko"] and "{gold}" in copy["Shop.Gold"]["ko"], "shop prices use placeholders")
-    require(copy["Shop.Name.effect_sun_gold"]["Source"] == "Golden Digits" and copy["Shop.Name.effect_sun_gold"]["ko"] == "금빛 숫자", "the golden digits name keeps its localization key")
+    for row in read_rows(ROOT / "src/ReplicatedStorage/Shared/Table", "ShopDataSheet", "Id Category"):
+        name = copy.get("Shop.Name." + row["Id"], {})
+        require(name.get("Source") and name.get("ko"), f"Missing product name {row['Id']}")
+    require(copy["Shop.TabEffectColor"]["Source"] == "Effect Color", "fourth shop tab is named")
     for index in range(1, 11):
         title_key = f"Achievement.Title{index}"
         rim_key = f"Shop.Name.rim_title_{index:02d}"
@@ -1949,17 +2030,21 @@ def check_shop():
 
 def check_key_press():
     candidates = [Path(tempfile.gettempdir()) / "lune-kw" / "lune.exe"]
+    if os.name == "nt":
+        candidates.append(Path.home() / "AppData/Local/Temp/lune-kw/lune.exe")
     local = os.environ.get("LOCALAPPDATA")
     if local:
-        candidates.append(Path(local) / "lune-kw" / "lune.exe")
+        candidates.extend([Path(local) / "lune-kw" / "lune.exe", Path(local) / "Temp" / "lune-kw" / "lune.exe"])
     lune = next((path for path in candidates if path.exists()), None)
     if lune is None:
         found = shutil.which("lune")
         lune = Path(found) if found else None
-    require(lune is not None, "lune is required to run the O-key press check")
+    require(lune is not None, "Lune is required for runtime regressions (install lune on PATH)")
+    subprocess.run([str(lune), "run", str(ROOT / "tools" / "settings_autosave_check.luau")], check=True, cwd=ROOT)
     subprocess.run([str(lune), "run", str(ROOT / "tools" / "m2_check.luau")], check=True, cwd=ROOT)
     subprocess.run([str(lune), "run", str(ROOT / "tools" / "rank_snapshot_check.luau")], check=True, cwd=ROOT)
     subprocess.run([str(lune), "run", str(ROOT / "tools" / "friend_boost_check.luau")], check=True, cwd=ROOT)
+    subprocess.run([str(lune), "run", str(ROOT / "tools" / "loading_check.luau")], check=True, cwd=ROOT)
 
 
 def verify():
@@ -1991,6 +2076,7 @@ def verify():
         subprocess.run(["rojo", "build", str(ROOT / "default.project.json"), "-o", str(output)], check=True)
         tree = ElementTree.parse(output)
         check_lobby_copy()
+        check_loading()
         check_m1_rules()
         check_cheat()
         check_match_deck()
@@ -2051,6 +2137,14 @@ def verify():
             ("ModuleScript", "SettingsScreen"),
             ("ModuleScript", "TutorialState"),
             ("ModuleScript", "TutorialScreen"),
+            ("LocalScript", "LoadingScreenBootstrap"),
+            ("LocalScript", "Loading"),
+            ("ModuleScript", "LoadingArt"),
+            ("ModuleScript", "LoadingPolicy"),
+            ("ModuleScript", "LoadingInputLock"),
+            ("ModuleScript", "LoadingPresenter"),
+            ("ModuleScript", "LoadingSessionController"),
+            ("ModuleScript", "AssetPreload"),
             ("ModuleScript", "ResultScreen"),
             ("Script", "Bootstrap"),
         ]:

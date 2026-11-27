@@ -12,6 +12,17 @@ export type Plan = {
 local ResultLayout = {}
 
 ResultLayout.rowStride = 28
+-- Score, language, reward, level, save, countdown, and the gold icon. The place line stays 1x.
+ResultLayout.detailScale = 2
+
+local function summaryHeight(compact: boolean): number
+	local textSize = if compact then 14 else 18
+	local placeSize = if compact then 22 else 32
+	local scale = ResultLayout.detailScale
+	local body = (textSize + 6) * scale + (textSize + 8) * scale + (textSize + 8) * scale + 12 + (textSize + 4) * scale
+	local bottom = if compact then 20 else 14
+	return 8 + (placeSize + 4) + body + bottom
+end
 
 function ResultLayout.plan(width: number, height: number, compactHeight: number?, compactWidth: number?): Plan
 	local heightLimit = if compactHeight ~= nil then compactHeight else 430
@@ -19,7 +30,7 @@ function ResultLayout.plan(width: number, height: number, compactHeight: number?
 	local compact = height <= heightLimit or width <= widthLimit
 	local margin = if compact then 6 else 16
 	local gap = 4
-	local summary = if compact then 148 else 168
+	local summary = summaryHeight(compact)
 	local list = height - margin * 2 - summary - gap
 	if list < 72 then
 		summary = math.max(96, height - margin * 2 - gap - 72)
@@ -39,7 +50,7 @@ end
 
 function ResultLayout.selfCheck()
 	local phone = ResultLayout.plan(568, 320)
-	assert(phone.compact and phone.summaryHeight == 148 and phone.listHeight == 156, "568×320 keeps the summary and a scrolling list")
+	assert(phone.compact and phone.summaryHeight == 230 and phone.listHeight == 74, "568×320 keeps the summary and a scrolling list")
 	assert(phone.margin * 2 + phone.summaryHeight + phone.gap + phone.listHeight == 320, "the result screen fits the phone height")
 	local desktop = ResultLayout.plan(1366, 768)
 	assert(not desktop.compact and desktop.listHeight > phone.listHeight, "a wide screen gives the rank list more room")

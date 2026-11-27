@@ -72,6 +72,14 @@ function MatchRules.selectParticipants(candidates: {Candidate}, maxParticipants:
 	return selected
 end
 
+-- Rest ends with nobody in the circle: stay in rest. One or more players open ready.
+function MatchRules.nextAfterRest(participantCount: number): "Rest" | "Ready"
+	if participantCount > 0 then
+		return "Ready"
+	end
+	return "Rest"
+end
+
 function MatchRules.assignPads(userIds: {number}, padCount: number, random: IntRng): {[number]: number}
 	assert(#userIds <= padCount, "More participants than pads")
 	local pads = table.create(padCount)
@@ -176,6 +184,8 @@ function MatchRules.selfCheck(constants: any)
 		{ userId = 1, inZone = false, waitStartedAt = 0 },
 	}, match.MaxParticipants, match.MinParticipants)
 	assert(#nobody == 0, "empty cycle")
+	assert(MatchRules.nextAfterRest(0) == "Rest", "nobody waits another rest")
+	assert(MatchRules.nextAfterRest(#solo) == "Ready", "one player starts")
 end
 
 return MatchRules

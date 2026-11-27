@@ -48,4 +48,16 @@ return table.freeze({
 		TouchTarget = 44,
 		CompactTouchTarget = 36,
 	}),
+	-- First-join loading. These are the only timings and the shared title placement.
+	Loading = table.freeze({
+		FadeOutSeconds = 0.35,
+		PlayerDataTimeoutSeconds = 30,
+		LobbyHudTimeoutSeconds = 20,
+		DecorativeTimeoutSeconds = 4,
+		StatusDotIntervalSeconds = 0.4,
+		TitleCenterX = 0.73,
+		TitleCenterY = 0.30,
+		TitleWidthScale = 0.40,
+		TitleHeightScale = 0.20,
+	}),
 })

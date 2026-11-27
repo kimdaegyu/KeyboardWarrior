@@ -9,6 +9,7 @@ export type Plan = {
 	stride: number,
 	row: number,
 	header: number,
+	status: number,
 	compact: boolean,
 }
 
@@ -27,7 +28,7 @@ local SettingsLayout = {}
 
 function SettingsLayout.usedHeight(plan: Plan, rows: number?): number
 	local count = if rows ~= nil then rows else 6
-	return plan.margin * 2 + plan.title + plan.stride * count + plan.gap + plan.row
+	return plan.margin * 2 + plan.title + plan.stride * count + plan.gap + plan.status
 end
 
 function SettingsLayout.plan(width: number, height: number, compactHeight: number?, compactWidth: number?): Plan
@@ -43,6 +44,7 @@ function SettingsLayout.plan(width: number, height: number, compactHeight: numbe
 		title = math.max(row, math.round(56 * scale)),
 		stride = math.max(row + 4, math.round(98 * scale)),
 		row = row,
+		status = 18,
 	}
 end
 
@@ -76,8 +78,8 @@ function SettingsLayout.selfCheck()
 	local header = phone.margin + phone.title
 	local view = card - header
 	local canvas = used - header
-	local applyTop = rows * phone.stride + phone.gap
-	assert(view < canvas and applyTop + phone.row <= canvas, "568×320 scrolls to apply while the header stays put")
+	local statusTop = rows * phone.stride + phone.gap
+	assert(view < canvas and statusTop + phone.status <= canvas, "568×320 scrolls to the status line while the header stays put")
 	assert(phone.stride >= phone.row, "the language choices sit under the title")
 	local desktop = SettingsLayout.plan(1366, 768)
 	assert(not desktop.compact and desktop.row > phone.row and SettingsLayout.usedHeight(desktop, rows) < 768, "a wide settings panel has taller rows")

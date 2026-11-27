@@ -20,6 +20,8 @@ export type Profile = {
 	body: string?,
 	rim: string?,
 	effect: string?,
+	effectColor: string?,
+	shopColorsMigrated: boolean?,
 	bgmVolume: number?,
 	sfxVolume: number?,
 	titles: {number}?,
@@ -167,6 +169,12 @@ function TutorialRules.acknowledge(profile: Profile): Profile
 	end
 	if type(profile.effect) == "string" then
 		updated.effect = profile.effect
+	end
+	if type(profile.effectColor) == "string" then
+		updated.effectColor = profile.effectColor
+	end
+	if profile.shopColorsMigrated == true then
+		updated.shopColorsMigrated = true
 	end
 	TitleRules.copyInto(updated, profile)
 	return updated

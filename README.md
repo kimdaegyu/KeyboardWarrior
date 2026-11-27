@@ -46,5 +46,6 @@ require(game.ServerScriptService.Core.StudioSmoke)()
 | --- | --- | --- | --- |
 | 숫자 ID 아이템 아이콘 | `assets/item-icons/source/<Id>.png` | `python tools/build_item_icons.py` | `ItemIconPages.luau`의 페이지 1 |
 | 이름 기반 UI 이미지 | `assets/ui-images/source/<이름>.png` | `python tools/build_ui_atlas.py` | `UIImageAssetIds.luau`의 `KeyboardWarriorUI` |
+| 최초 접속 로딩 배경·투명 타이틀 | 업로드한 배경 PNG, 투명 타이틀 PNG | 아틀라스에 넣지 않음 | `LoadingArt.luau`의 `BackgroundImage`, `TitleImage` |
 
 두 등록 모듈은 `src/ReplicatedStorage/Shared`에 있다. 각 atlas 폴더의 PNG를 Roblox에 업로드하고 이미지 ID를 등록하면 해당 페이지를 조회할 수 있다. UI에는 `UIImageUtil.apply(image, "Shop")`처럼 대소문자를 구분한 파일명을 확장자 없이 전달한다. 발판 미리보기는 ShopDataSheet의 Id를 사용한다. 패널·키캡의 9-slice 좌표는 자동 생성된다. 흰 패널과 노란 버튼의 글자색은 남색(#172945), 파란 선택 버튼의 글자색은 흰색을 사용한다.

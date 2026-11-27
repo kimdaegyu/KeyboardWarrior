@@ -234,7 +234,6 @@ local function lockParticipants()
 	cycleId += 1
 	clearAssignments()
 	if #selected == 0 then
-		-- The pilot clock still advances. No pads, rewards, or participant snapshot.
 		matchId = 0
 		participantCount = 0
 		return
@@ -343,7 +342,27 @@ local function leaveParticipant(player: Player, requestedMatchId: any)
 	publish()
 end
 
+local function holdEmptyRest(): boolean
+	refreshZone()
+	local selected = MatchRules.selectParticipants(collectCandidates(), MATCH.MaxParticipants, MATCH.MinParticipants)
+	if MatchRules.nextAfterRest(#selected) == "Ready" then
+		return false
+	end
+	local now = Workspace:GetServerTimeNow()
+	local nextEnd = phaseEndsAt + MATCH.RestSeconds
+	if nextEnd < now then
+		nextEnd = now + MATCH.RestSeconds
+	end
+	phaseEndsAt = nextEnd
+	publish()
+	print(`[KeyboardWarrior] Rest extended endsAt={string.format("%.3f", phaseEndsAt)} participants=0`)
+	return true
+end
+
 local function enter(nextPhase: Phase)
+	if nextPhase == "Ready" and holdEmptyRest() then
+		return
+	end
 	local previous = phase
 	if previous == "Play" then
 		ArenaService.setInnerWallCollide(false)

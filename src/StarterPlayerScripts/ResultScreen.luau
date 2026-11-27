@@ -5,6 +5,7 @@ local SoundManager = require(script.Parent.SoundManager)
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local constants = require(ReplicatedStorage.Shared.IngameConstants)
@@ -64,18 +65,40 @@ function ResultScreen.bind(root: Frame): () -> ()
 	local scoreLabel = stat("Score", UiChrome.Navy, Enum.TextXAlignment.Left)
 	local languageLabel = stat("Language", UiChrome.Navy, Enum.TextXAlignment.Right)
 	local rewardLabel = stat("Reward", UiChrome.Navy, Enum.TextXAlignment.Left)
-	local titleScroll = Instance.new("ScrollingFrame")
-	titleScroll.Name = "Titles"
-	titleScroll.BackgroundTransparency = 1
-	titleScroll.BorderSizePixel = 0
-	titleScroll.ScrollBarThickness = 6
-	titleScroll.Visible = false
-	titleScroll.ZIndex = 10
-	titleScroll.Parent = summary
-	local titleLabels: {TextLabel} = {}
 	local titleCatalog = TitleRules.catalog(TableData.rows("AchievementDataSheet") :: {TitleRules.Row}) or {}
-	local laidTitles = 0
+	local seenGrants: {[string]: boolean} = {}
+	local grantQueue: {{number}} = {}
+	local grantPlaying = false
 	local applyLayout: () -> ()
+	local toast = Instance.new("CanvasGroup")
+	toast.Name = "TitleEarn"
+	toast.BackgroundColor3 = UiChrome.White
+	toast.BackgroundTransparency = 0
+	toast.AnchorPoint = Vector2.new(0.5, 0)
+	toast.Position = UDim2.new(0.5, 0, 0, 12)
+	toast.Size = UDim2.fromOffset(980, 140)
+	toast.Visible = false
+	toast.Active = false
+	toast.ZIndex = 40
+	toast.Parent = root
+	UiChrome.round(toast, 28)
+	local toastHeader = Instance.new("TextLabel")
+	toastHeader.Name = "Header"
+	toastHeader.BackgroundTransparency = 1
+	toastHeader.Font = Enum.Font.GothamBold
+	toastHeader.TextColor3 = UiChrome.Navy
+	toastHeader.TextXAlignment = Enum.TextXAlignment.Center
+	toastHeader.TextYAlignment = Enum.TextYAlignment.Center
+	toastHeader.TextTruncate = Enum.TextTruncate.AtEnd
+	toastHeader.TextSize = 39
+	toastHeader.ZIndex = 41
+	toastHeader.Parent = toast
+	local toastRows = Instance.new("Frame")
+	toastRows.Name = "Rows"
+	toastRows.BackgroundTransparency = 1
+	toastRows.Active = false
+	toastRows.ZIndex = 41
+	toastRows.Parent = toast
 	local levelLabel = stat("Level", UiChrome.Navy, Enum.TextXAlignment.Left)
 	local saveLabel = stat("Save", UiChrome.Navy, Enum.TextXAlignment.Right)
 	local nextLabel = stat("Next", UiChrome.Navy, Enum.TextXAlignment.Center)
@@ -211,29 +234,11 @@ function ResultScreen.bind(root: Frame): () -> ()
 		return row
 	end
 
-	local function titleIds(): {number}
-		local current = view
-		if current == nil or type(current.titles) ~= "table" then
-			return {}
-		end
-		local ids: {number} = {}
-		for _, id in current.titles do
-			if type(id) == "number" then
-				table.insert(ids, id)
-			end
-		end
-		return ids
-	end
-
 	local function render()
 		local current = view
 		local show = showing() and current ~= nil
 		screen.Visible = show
 		if not show or current == nil then
-			return
-		end
-		if #titleIds() ~= laidTitles then
-			applyLayout()
 			return
 		end
 		placeLabel.Text = Localization.getText("Result.Place", nil, {
@@ -291,35 +296,172 @@ function ResultScreen.bind(root: Frame): () -> ()
 			end
 		end
 		list.CanvasSize = UDim2.fromOffset(0, math.max(#rows, 1) * ResultLayout.rowStride)
-		local earned = titleIds()
-		for index = 1, math.max(#earned, #titleLabels) do
-			local titleId = earned[index]
-			local label = titleLabels[index]
-			if titleId ~= nil and label == nil then
-				label = Instance.new("TextLabel")
-				label.BackgroundTransparency = 1
-				label.Font = Enum.Font.GothamMedium
-				label.TextXAlignment = Enum.TextXAlignment.Left
-				label.TextColor3 = UiChrome.Navy
-				label.TextTruncate = Enum.TextTruncate.AtEnd
-				label.ZIndex = 11
-				label.Parent = titleScroll
-				titleLabels[index] = label
-			end
-			if label ~= nil then
-				label.Visible = titleId ~= nil
-				if titleId ~= nil then
-					local achievement = TitleRules.find(titleCatalog, titleId)
-					local titleName = if achievement ~= nil then Localization.getText(achievement.titleKey) else tostring(titleId)
-					local rimName = if achievement ~= nil then Localization.getText("Shop.Name." .. achievement.shopId) else ""
-					label.Text = Localization.getText("Result.TitleLine", nil, { title = titleName, rim = rimName })
-					label.TextSize = 14
-					label.Size = UDim2.new(1, -8, 0, 16)
-					label.Position = UDim2.fromOffset(0, (index - 1) * 18)
-				end
+	end
+
+	local function fillToast(ids: {number})
+		for _, child in toastRows:GetChildren() do
+			child:Destroy()
+		end
+		local ordered: {TitleRules.Achievement} = {}
+		for _, id in ids do
+			local achievement = TitleRules.find(titleCatalog, id)
+			if achievement ~= nil then
+				table.insert(ordered, achievement)
 			end
 		end
-		titleScroll.CanvasSize = UDim2.fromOffset(0, math.max(#earned, 1) * 18)
+		table.sort(ordered, function(left, right)
+			if left.score ~= right.score then
+				return left.score > right.score
+			end
+			return left.id > right.id
+		end)
+		local width = math.min(1190, math.max(0, root.AbsoluteSize.X - 24))
+		local rowHeight = 112
+		toastHeader.Text = Localization.getText("Title.Earned")
+		toastHeader.TextSize = 39
+		toastHeader.Position = UDim2.fromOffset(42, 28)
+		toastHeader.Size = UDim2.new(1, -84, 0, 77)
+		toastRows.Position = UDim2.fromOffset(42, 119)
+		toastRows.Size = UDim2.new(1, -84, 0, #ordered * rowHeight)
+		for index, achievement in ordered do
+			local row = Instance.new("Frame")
+			row.Name = "Earn"
+			row.BackgroundTransparency = 1
+			row.Active = false
+			row.Position = UDim2.fromOffset(0, (index - 1) * rowHeight)
+			row.Size = UDim2.new(1, 0, 0, rowHeight)
+			row.ZIndex = 41
+			row.Parent = toastRows
+			local pair = Instance.new("Frame")
+			pair.Name = "Pair"
+			pair.BackgroundTransparency = 1
+			pair.AnchorPoint = Vector2.new(0.5, 0.5)
+			pair.Position = UDim2.fromScale(0.5, 0.5)
+			pair.AutomaticSize = Enum.AutomaticSize.X
+			pair.Size = UDim2.fromOffset(0, 77)
+			pair.ZIndex = 42
+			pair.Parent = row
+			local pairLayout = Instance.new("UIListLayout")
+			pairLayout.FillDirection = Enum.FillDirection.Horizontal
+			pairLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+			pairLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+			pairLayout.Padding = UDim.new(0, 12)
+			pairLayout.SortOrder = Enum.SortOrder.LayoutOrder
+			pairLayout.Parent = pair
+			local icon = Instance.new("ImageLabel")
+			icon.BackgroundTransparency = 1
+			icon.Size = UDim2.fromOffset(77, 77)
+			icon.ScaleType = Enum.ScaleType.Fit
+			icon.LayoutOrder = 1
+			icon.ZIndex = 42
+			icon.Parent = pair
+			ItemIconUtil.apply(icon, achievement.itemId)
+			local name = Instance.new("TextLabel")
+			name.BackgroundTransparency = 1
+			name.Font = Enum.Font.GothamMedium
+			name.TextXAlignment = Enum.TextXAlignment.Left
+			name.TextYAlignment = Enum.TextYAlignment.Center
+			name.TextTruncate = Enum.TextTruncate.AtEnd
+			name.TextColor3 = UiChrome.Navy
+			name.TextSize = 53
+			name.Text = Localization.getText(achievement.titleKey)
+			name.AutomaticSize = Enum.AutomaticSize.X
+			name.Size = UDim2.fromOffset(0, 77)
+			name.LayoutOrder = 2
+			name.ZIndex = 42
+			name.Parent = pair
+		end
+		toast.Size = UDim2.fromOffset(width, 147 + #ordered * rowHeight)
+	end
+
+	local function playGrantQueue()
+		if grantPlaying or toast.Parent == nil then
+			return
+		end
+		local ids = table.remove(grantQueue, 1)
+		if ids == nil then
+			toast.Visible = false
+			return
+		end
+		grantPlaying = true
+		fillToast(ids)
+		local rest = 12
+		toast.GroupTransparency = 0
+		toast.Visible = true
+		toast.Position = UDim2.new(0.5, 0, 0, rest - 63)
+		local enter = TweenService:Create(toast, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Position = UDim2.new(0.5, 0, 0, rest),
+		})
+		enter:Play()
+		local dwell = 1.35 + 0.4 * #ids
+		task.delay(0.2 + dwell, function()
+			if toast.Parent == nil then
+				grantPlaying = false
+				return
+			end
+			local fade = TweenService:Create(toast, TweenInfo.new(0.25), { GroupTransparency = 1 })
+			fade:Play()
+			fade.Completed:Once(function()
+				grantPlaying = false
+				playGrantQueue()
+			end)
+		end)
+	end
+
+	local function queueGrant(ids: {number})
+		local room = math.max(1, math.floor((root.AbsoluteSize.Y * 0.55 - 168) / 112))
+		local index = 1
+		while index <= #ids do
+			local batch = {}
+			for _ = 1, room do
+				local id = ids[index]
+				if id == nil then
+					break
+				end
+				table.insert(batch, id)
+				index += 1
+			end
+			if #batch > 0 then
+				table.insert(grantQueue, batch)
+			end
+		end
+		playGrantQueue()
+	end
+
+	local function noticeTitles(message: {[string]: any})
+		if type(message.titles) ~= "table" or type(message.settlementId) ~= "string" then
+			return
+		end
+		local ids: {number} = {}
+		for _, id in message.titles do
+			if type(id) == "number" then
+				table.insert(ids, id)
+			end
+		end
+		if #ids == 0 then
+			return
+		end
+		table.sort(ids)
+		local key = message.settlementId .. ":" .. table.concat(ids, ",")
+		if seenGrants[key] then
+			return
+		end
+		seenGrants[key] = true
+		local ordered: {number} = {}
+		for _, id in ids do
+			table.insert(ordered, id)
+		end
+		table.sort(ordered, function(left, right)
+			local leftRow = TitleRules.find(titleCatalog, left)
+			local rightRow = TitleRules.find(titleCatalog, right)
+			local leftScore = if leftRow ~= nil then leftRow.score else 0
+			local rightScore = if rightRow ~= nil then rightRow.score else 0
+			if leftScore ~= rightScore then
+				return leftScore > rightScore
+			end
+			return left > right
+		end)
+		queueGrant(ordered)
 	end
 
 	applyLayout = function()
@@ -333,31 +475,26 @@ function ResultScreen.bind(root: Frame): () -> ()
 			viewport = math.min(viewport, content)
 		end
 		local plan = ResultLayout.plan(viewport, size.Y, constants.UI.CompactHeight, constants.UI.CompactWidth)
-		local earnedCount = #titleIds()
-		laidTitles = earnedCount
-		local titleBox = 0
-		if earnedCount > 0 then
-			titleBox = math.min(if plan.compact then 54 else 72, earnedCount * 18)
-		end
 		viewport = math.min(viewport, 600)
 		local origin = math.floor((size.X - viewport) / 2)
 		local x = origin + plan.margin
 		local width = math.max(0, viewport - plan.margin * 2)
 		summary.Position = UDim2.fromOffset(x, plan.margin)
-		summary.Size = UDim2.fromOffset(width, plan.summaryHeight + titleBox)
+		summary.Size = UDim2.fromOffset(width, plan.summaryHeight)
 
-		listPanel.Position = UDim2.fromOffset(x, plan.margin + plan.summaryHeight + titleBox + plan.gap)
-		listPanel.Size = UDim2.fromOffset(width, math.max(0, plan.listHeight - titleBox))
+		listPanel.Position = UDim2.fromOffset(x, plan.margin + plan.summaryHeight + plan.gap)
+		listPanel.Size = UDim2.fromOffset(width, plan.listHeight)
 
 		local textSize = if plan.compact then 14 else 18
 		local placeSize = if plan.compact then 22 else 32
+		local scale = ResultLayout.detailScale
 		placeLabel.TextSize = placeSize
-		scoreLabel.TextSize = textSize + 2
-		languageLabel.TextSize = textSize
-		rewardLabel.TextSize = textSize
-		levelLabel.TextSize = textSize
-		saveLabel.TextSize = textSize - 1
-		nextLabel.TextSize = textSize - 1
+		scoreLabel.TextSize = (textSize + 2) * scale
+		languageLabel.TextSize = textSize * scale
+		rewardLabel.TextSize = textSize * scale
+		levelLabel.TextSize = textSize * scale
+		saveLabel.TextSize = (textSize - 1) * scale
+		nextLabel.TextSize = (textSize - 1) * scale
 		local side = if plan.compact then 32 else 40
 		closeButton.Position = UDim2.new(1, -4, 0, 3)
 		closeButton.Size = UDim2.fromOffset(side, side)
@@ -365,31 +502,32 @@ function ResultScreen.bind(root: Frame): () -> ()
 		placeLabel.Position = UDim2.fromOffset(side + 6, y)
 		placeLabel.Size = UDim2.new(1, -2 * (side + 6), 0, placeSize + 4)
 		y += placeSize + 4
+		local scoreRow = (textSize + 6) * scale
+		local rewardRow = (textSize + 8) * scale
+		local levelRow = (textSize + 8) * scale
+		local nextRow = (textSize + 4) * scale
+		local icon = (textSize + 4) * scale
 		scoreLabel.Position = UDim2.fromOffset(12, y)
-		scoreLabel.Size = UDim2.new(0.58, -12, 0, textSize + 6)
+		scoreLabel.Size = UDim2.new(0.58, -12, 0, scoreRow)
 		languageLabel.Position = UDim2.new(0.58, 0, 0, y)
-		languageLabel.Size = UDim2.new(0.42, -12, 0, textSize + 6)
-		y += textSize + 6
-		local rewardShift = if goldIcon.Visible then textSize + 8 else 0
-		goldIcon.Position = UDim2.fromOffset(12, y)
-		goldIcon.Size = UDim2.fromOffset(textSize + 4, textSize + 4)
+		languageLabel.Size = UDim2.new(0.42, -12, 0, scoreRow)
+		y += scoreRow
+		local rewardShift = if goldIcon.Visible then icon + 4 else 0
+		goldIcon.Position = UDim2.fromOffset(12, y + scale)
+		goldIcon.Size = UDim2.fromOffset(icon, icon)
 		rewardLabel.Position = UDim2.fromOffset(12 + rewardShift, y)
-		rewardLabel.Size = UDim2.new(1, -24 - rewardShift, 0, textSize + 6)
-		y += textSize + 8
-		titleScroll.Visible = titleBox > 0
-		titleScroll.Position = UDim2.fromOffset(12, y)
-		titleScroll.Size = UDim2.new(1, -24, 0, titleBox)
-		y += titleBox
+		rewardLabel.Size = UDim2.new(1, -24 - rewardShift, 0, scoreRow)
+		y += rewardRow
 		levelLabel.Position = UDim2.fromOffset(12, y)
-		levelLabel.Size = UDim2.new(0.62, -12, 0, textSize + 6)
+		levelLabel.Size = UDim2.new(0.62, -12, 0, scoreRow)
 		saveLabel.Position = UDim2.new(0.62, 0, 0, y)
-		saveLabel.Size = UDim2.new(0.38, -12, 0, textSize + 6)
-		y += textSize + 8
+		saveLabel.Size = UDim2.new(0.38, -12, 0, scoreRow)
+		y += levelRow
 		barBack.Position = UDim2.fromOffset(12, y)
 		barBack.Size = UDim2.new(1, -24, 0, 8)
 		y += 12
 		nextLabel.Position = UDim2.fromOffset(12, y)
-		nextLabel.Size = UDim2.new(1, -24, 0, textSize + 4)
+		nextLabel.Size = UDim2.new(1, -24, 0, nextRow)
 		render()
 	end
 
@@ -415,7 +553,11 @@ function ResultScreen.bind(root: Frame): () -> ()
 		if type(message) ~= "table" or type(message.settlementId) ~= "string" or type(message.rows) ~= "table" then
 			return
 		end
-		if not showing() or message.matchId ~= stateFolder:GetAttribute("MatchId") then
+		if message.matchId ~= stateFolder:GetAttribute("MatchId") then
+			return
+		end
+		noticeTitles(message)
+		if not showing() then
 			return
 		end
 		if lastRewardSound ~= message.settlementId then
@@ -461,6 +603,7 @@ function ResultScreen.bind(root: Frame): () -> ()
 			connection:Disconnect()
 		end
 		stopLocale()
+		toast:Destroy()
 		screen:Destroy()
 	end
 end

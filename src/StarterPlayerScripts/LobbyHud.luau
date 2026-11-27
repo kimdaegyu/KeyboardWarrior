@@ -284,6 +284,8 @@ function LobbyHud.bind(root: Frame): () -> ()
 		RunService.Heartbeat:Connect(render),
 	}
 	local stopLocale = Localization.onChanged(render)
+	-- The lobby buttons and their Activated handlers exist. SafeRoot alone is not this signal.
+	playerGui:SetAttribute("LobbyHudReady", true)
 	return function()
 		for _, connection in connections do
 			connection:Disconnect()

@@ -1,5 +1,5 @@
 --!strict
--- Lobby settings. A language row opens a scrolling list. Apply stores the choice. Close throws away unsent edits.
+-- Lobby settings. A language row opens a scrolling list. The latest choice saves itself. Close sends a pending edit.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -122,7 +122,6 @@ function SettingsScreen.bind(root: Frame): () -> ()
 	local uiLabel = label("UiLanguage", UiChrome.Navy, panel)
 	local typingLabel = label("TypingLanguage", UiChrome.Navy, panel)
 	local glossLabel = label("GlossLanguage", UiChrome.Navy, panel)
-	local statusLabel = label("Status", UiChrome.Navy, panel)
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	titleLabel.Font = Enum.Font.GothamBold
 	local uiButton, uiCaption, uiArrow = valueButton("UiValue")
@@ -130,10 +129,21 @@ function SettingsScreen.bind(root: Frame): () -> ()
 	typingNote.TextXAlignment = Enum.TextXAlignment.Left
 	typingNote.TextYAlignment = Enum.TextYAlignment.Top
 	local glossButton, glossCaption, glossArrow = valueButton("GlossValue")
-	local applyButton = actionButton("Apply")
 	local closeButton = UiChrome.closeButton(card)
 	local replayButton = actionButton("Replay")
-	applyButton:SetAttribute("Face", "primary")
+	local statusLabel = Instance.new("TextButton")
+	statusLabel.Name = "Status"
+	statusLabel.Font = Enum.Font.GothamMedium
+	statusLabel.Text = ""
+	statusLabel.TextColor3 = UiChrome.Navy
+	statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+	statusLabel.TextYAlignment = Enum.TextYAlignment.Center
+	statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	statusLabel.BackgroundTransparency = 1
+	statusLabel.AutoButtonColor = false
+	statusLabel.BorderSizePixel = 0
+	statusLabel.ZIndex = 6
+	statusLabel.Parent = panel
 
 	local tutorialLabel = label("Tutorial", UiChrome.Navy, panel)
 	local gear = UiChrome.icon(card, 10063)
@@ -252,8 +262,17 @@ function SettingsScreen.bind(root: Frame): () -> ()
 	scroller.ScrollingDirection = Enum.ScrollingDirection.Y
 	scroller.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	scroller.CanvasSize = UDim2.new()
+	scroller.Active = true
+	scroller.ClipsDescendants = true
 	scroller.ZIndex = 10
 	scroller.Parent = pickerPanel
+	local listInset = Instance.new("UIPadding")
+	listInset.Name = "ListInset"
+	listInset.PaddingTop = UDim.new(0, 2)
+	listInset.PaddingBottom = UDim.new(0, 2)
+	listInset.PaddingLeft = UDim.new(0, 2)
+	listInset.PaddingRight = UDim.new(0, 2)
+	listInset.Parent = scroller
 	local listLayout = Instance.new("UIListLayout")
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.Padding = UDim.new(0, 4)
@@ -366,6 +385,27 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		return draft.uiLocale
 	end
 
+	local function currentChoice(): SettingsState.Choice
+		return {
+			uiLocale = draft.uiLocale,
+			gloss = draft.gloss,
+			typing = typingId,
+			bgmVolume = draft.bgmVolume,
+			sfxVolume = draft.sfxVolume,
+		}
+	end
+
+	local function submitNow()
+		if typingId == "" then
+			local first = choicesFor("typing")[1]
+			if first ~= nil then
+				typingId = first.id
+			end
+		end
+		SettingsState.queue(currentChoice())
+		SettingsState.flush()
+	end
+
 	local function currentName(kind: string): string
 		local selected = selectedId(kind)
 		for _, choice in choicesFor(kind) do
@@ -427,12 +467,19 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		scroller.Size = UDim2.fromOffset(plan.panelWidth - 16, plan.listHeight)
 		listLayout.Padding = UDim.new(0, plan.gap)
 		for _, button in pickerButtons do
-			button.Size = UDim2.new(1, -12, 0, plan.row)
+			button.Size = UDim2.new(1, -scroller.ScrollBarThickness, 0, plan.row)
 			button.TextSize = math.clamp(plan.row - 14, 12, 18)
 			local face = button:GetAttribute("Face")
 			local role = if type(face) == "string" then face else "panel"
 			UiChrome.paint(button, role)
 			button.TextColor3 = UiChrome.ink(role)
+			for _, child in button:GetChildren() do
+				if child:IsA("UIStroke") then
+					child.Color = Color3.fromRGB(70, 92, 122)
+					child.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+					child.Thickness = 1
+				end
+			end
 		end
 		backButton.Position = UDim2.fromOffset(8, 8 + plan.listHeight + plan.gap)
 		backButton.Size = UDim2.fromOffset(math.max(0, plan.panelWidth - 16), plan.back)
@@ -512,6 +559,7 @@ function SettingsScreen.bind(root: Frame): () -> ()
 					dirty = true
 				end
 				closeList()
+				SettingsState.queue(currentChoice())
 				render()
 				applyLayout()
 			end)
@@ -548,8 +596,6 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		glossArrow.Text = if #choicesFor("gloss") > 1 then "›" else ""
 		uiButton.Active = #choicesFor("ui") > 1
 		glossButton.Active = #choicesFor("gloss") > 1
-		applyButton.Text = Localization.getText("Settings.Apply")
-
 		bgmRow.title.Text = Localization.getText("Settings.MusicVolume")
 		sfxRow.title.Text = Localization.getText("Settings.SoundEffectsVolume")
 		paintVolume(bgmRow)
@@ -567,9 +613,7 @@ function SettingsScreen.bind(root: Frame): () -> ()
 			statusKey = "Settings.Saved"
 		end
 		statusLabel.Text = if statusKey ~= nil then Localization.getText(statusKey) else ""
-		local canApply = state ~= "saving" and state ~= "loading"
-		applyButton.Active = canApply
-		applyButton.AutoButtonColor = canApply
+		statusLabel.Active = state == "failed" or state == "unavailable"
 		refreshList()
 	end
 
@@ -648,15 +692,11 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		captionLayout(glossCaption, glossArrow, glossButton.Active)
 		captionLayout(typingCaption, typingNote, typingButton.Active)
 		local y = #rows * plan.stride + plan.gap
-		local actionWidth = math.max(78, math.round(plan.row * 1.9))
-		box(applyButton, right - actionWidth, y, actionWidth, plan.row)
 		box(closeButton, right, pad, plan.title, plan.title)
-		box(statusLabel, pad, y, right - pad - actionWidth - plan.gap, plan.row)
-		statusLabel.TextSize = math.min(font, 17)
-		applyButton.TextSize = font
+		box(statusLabel, pad, y, right - pad, plan.status)
+		statusLabel.TextSize = math.min(14, font)
 		closeButton.TextSize = font
 		UiChrome.paint(closeButton, "panel")
-		UiChrome.paint(applyButton, "primary")
 		layoutList()
 	end
 
@@ -669,9 +709,7 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		if open and PracticeRules.blockedByMatch(inMatch, phase, root:GetAttribute("ResultDismissed") == true) then
 			closeList()
 			drag = nil
-			draft = copyChoice(SettingsState.applied())
-			SoundManager.setVolumes(draft.bgmVolume, draft.sfxVolume)
-			dirty = false
+			submitNow()
 			shown = false
 			screen.Visible = false
 			root:SetAttribute("SettingsOpen", false)
@@ -679,18 +717,19 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		end
 		if open and not shown then
 			panel.CanvasPosition = Vector2.zero
-			draft = copyChoice(SettingsState.applied())
+			local held = SettingsState.pending()
+			draft = copyChoice(if held ~= nil then held else SettingsState.applied())
 			typingId = draft.typing
-			dirty = false
+			dirty = held ~= nil
 			shown = true
 			closeList()
 		end
 		if not open then
+			if shown then
+				submitNow()
+			end
 			closeList()
 			drag = nil
-			draft = copyChoice(SettingsState.applied())
-			SoundManager.setVolumes(draft.bgmVolume, draft.sfxVolume)
-			dirty = false
 			shown = false
 		end
 		screen.Visible = open
@@ -714,13 +753,8 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		render()
 		applyLayout()
 	end)
-	applyButton.Activated:Connect(function()
-		local state = SettingsState.saveState()
-		if state == "saving" or state == "loading" then
-			return
-		end
-		SettingsState.apply(draft.uiLocale, draft.gloss, typingId, draft.bgmVolume, draft.sfxVolume)
-		render()
+	statusLabel.Activated:Connect(function()
+		SettingsState.retry()
 	end)
 	closeButton.Activated:Connect(function()
 		root:SetAttribute("SettingsOpen", false)
@@ -762,6 +796,7 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		if active.bus == "sfx" and volumeOf(active.bus) ~= active.origin then
 			SoundManager.play("UIConfirm")
 		end
+		SettingsState.queue(currentChoice())
 	end)
 	local stateFolder = ReplicatedStorage:WaitForChild("MatchState")
 	local connections = {
@@ -774,7 +809,15 @@ function SettingsScreen.bind(root: Frame): () -> ()
 		dragEnded,
 	}
 	local stopSettings = SettingsState.onChanged(function()
-		if shown and not dirty then
+		local held = SettingsState.pending()
+		if shown and drag ~= nil then
+			SoundManager.setVolumes(draft.bgmVolume, draft.sfxVolume)
+		elseif shown and held ~= nil then
+			draft = copyChoice(held)
+			typingId = draft.typing
+			dirty = true
+			SoundManager.setVolumes(draft.bgmVolume, draft.sfxVolume)
+		elseif shown and not dirty then
 			draft = copyChoice(SettingsState.applied())
 			typingId = draft.typing
 		elseif shown and same(draft, SettingsState.applied()) and typingId == SettingsState.applied().typing then

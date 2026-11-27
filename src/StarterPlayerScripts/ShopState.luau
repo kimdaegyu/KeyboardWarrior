@@ -24,6 +24,7 @@ local gold = 0
 local body = ""
 local rim = ""
 local effect = ""
+local effectColor = ""
 local items: {Item} = {}
 local received = false
 local pending = false
@@ -63,6 +64,10 @@ end
 
 function ShopState.effect(): string
 	return effect
+end
+
+function ShopState.effectColor(): string
+	return effectColor
 end
 
 function ShopState.items(): {Item}
@@ -140,6 +145,7 @@ local function onState(message: any)
 	body = if type(message.body) == "string" then message.body else ""
 	rim = if type(message.rim) == "string" then message.rim else ""
 	effect = if type(message.effect) == "string" then message.effect else ""
+	effectColor = if type(message.effectColor) == "string" then message.effectColor else ""
 	items = nextItems
 	if reason ~= "ok" then
 		pending = false

@@ -8,6 +8,7 @@ local constants = require(ReplicatedStorage.Shared.IngameConstants)
 local Localization = require(ReplicatedStorage.Shared.Localization)
 local PracticeRules = require(ReplicatedStorage.Shared.PracticeRules)
 local TableData = require(ReplicatedStorage.Shared.TableData)
+local TutorialImages = require(ReplicatedStorage.Shared.TutorialImages)
 local TutorialLayout = require(ReplicatedStorage.Shared.TutorialLayout)
 local TutorialRules = require(ReplicatedStorage.Shared.TutorialRules)
 local UiChrome = require(ReplicatedStorage.Shared.UiChrome)
@@ -41,6 +42,15 @@ function TutorialScreen.bind(root: Frame): () -> ()
 	panel.ZIndex = 7
 	panel.Parent = screen
 	UiChrome.paint(panel, "panel")
+
+	local figure = Instance.new("ImageLabel")
+	figure.Name = "Figure"
+	figure.BackgroundTransparency = 1
+	figure.BorderSizePixel = 0
+	figure.ScaleType = Enum.ScaleType.Fit
+	figure.Image = ""
+	figure.ZIndex = 8
+	figure.Parent = panel
 
 	local titleLabel = Instance.new("TextLabel")
 	titleLabel.Name = "Title"
@@ -103,12 +113,36 @@ function TutorialScreen.bind(root: Frame): () -> ()
 	local previousButton = button("Previous", "panel")
 	local nextButton = button("Next", "primary")
 	local skipButton = button("Skip", "panel")
-	local guideIcon = UiChrome.icon(panel, "Tutorial")
-	guideIcon.ZIndex = 8
 
 	local page = 1
 	local shown = false
 	local held = false
+	local figureToken = 0
+
+	local function showFigure(stepId: string, url: string)
+		if figure:GetAttribute("StepId") == stepId and figure.Image == url then
+			return
+		end
+		figureToken += 1
+		local token = figureToken
+		figure:SetAttribute("StepId", stepId)
+		figure.Image = ""
+		if url == "" then
+			return
+		end
+		task.defer(function()
+			if token ~= figureToken or figure:GetAttribute("StepId") ~= stepId then
+				return
+			end
+			figure.Image = url
+		end)
+	end
+
+	local function clearFigure()
+		figureToken += 1
+		figure.Image = ""
+		figure:SetAttribute("StepId", "")
+	end
 
 	local function viewport(): (number, number, number)
 		local size = root.AbsoluteSize
@@ -129,14 +163,16 @@ function TutorialScreen.bind(root: Frame): () -> ()
 		if step == nil then
 			return
 		end
-		local facts = if step.bodyKey == "Tutorial.TypingBody"
+		local frame = TutorialLayout.presentation(step.id, step.titleKey, step.bodyKey, TutorialImages.image)
+		local facts = if frame.bodyKey == "Tutorial.TypingBody"
 			then {
 				seconds = constants.Match.DoubleScoreSeconds,
 				multiplier = constants.Match.EndScoreMultiplier,
 			}
 			else nil
-		titleLabel.Text = Localization.getText(step.titleKey)
-		bodyText.Text = Localization.getText(step.bodyKey, nil, facts)
+		titleLabel.Text = Localization.getText(frame.titleKey)
+		bodyText.Text = Localization.getText(frame.bodyKey, nil, facts)
+		showFigure(frame.id, frame.image)
 		stepLabel.Text = TutorialRules.progress(page, #steps)
 		previousButton.Text = Localization.getText("Tutorial.Previous")
 		previousButton.Active = page > 1
@@ -155,31 +191,28 @@ function TutorialScreen.bind(root: Frame): () -> ()
 		if sizeX < 50 or sizeY < 50 then
 			return
 		end
-		local step = currentStep()
-		local docked = step ~= nil and step.id == "join" and root:GetAttribute("SettingsOpen") ~= true
-		local plan = TutorialLayout.plan(width, sizeY, docked, constants.UI.CompactHeight, constants.UI.CompactWidth)
+		local plan = TutorialLayout.plan(width, sizeY, false, constants.UI.CompactHeight, constants.UI.CompactWidth)
 		local origin = math.floor((sizeX - width) / 2)
 		local x = origin + math.floor((width - plan.panelWidth) / 2)
-		local y = if plan.docked then sizeY - plan.margin - plan.panelHeight else math.floor((sizeY - plan.panelHeight) / 2)
-		screen.BackgroundTransparency = if plan.docked then 1 else 0.35
-		screen.Active = not plan.docked
+		local y = math.floor((sizeY - plan.panelHeight) / 2)
+		screen.BackgroundTransparency = 1
+		screen.Active = false
 		panel.Position = UDim2.fromOffset(x, math.max(plan.margin, y))
 		panel.Size = UDim2.fromOffset(plan.panelWidth, plan.panelHeight)
 
 		local inner = plan.gap
 		local rowWidth = math.max(0, plan.panelWidth - inner * 2)
-		local cursor = inner
-		local iconRoom = if guideIcon.Visible then plan.title else 0
-		guideIcon.Position = UDim2.fromOffset(inner, cursor)
-		guideIcon.Size = UDim2.fromOffset(iconRoom, plan.title)
-		titleLabel.Position = UDim2.fromOffset(inner + iconRoom, cursor)
-		titleLabel.Size = UDim2.fromOffset(math.max(0, rowWidth - iconRoom), plan.title)
+		local textX = inner + plan.image + plan.gap
+		figure.Position = UDim2.fromOffset(inner, inner)
+		figure.Size = UDim2.fromOffset(plan.image, plan.image)
+		titleLabel.Position = UDim2.fromOffset(textX, inner)
+		titleLabel.Size = UDim2.fromOffset(plan.textWidth, plan.title)
 		titleLabel.TextSize = math.clamp(plan.title - 4, 14, 24)
-		cursor += plan.title + plan.gap
-		body.Position = UDim2.fromOffset(inner, cursor)
-		body.Size = UDim2.fromOffset(rowWidth, plan.body)
+		body.Position = UDim2.fromOffset(textX, inner + plan.title + plan.gap)
+		body.Size = UDim2.fromOffset(plan.textWidth, plan.body)
+		bodyText.Size = UDim2.new(1, -(body.ScrollBarThickness + 4), 0, 0)
 		bodyText.TextSize = math.clamp(plan.body / 4, 13, 18)
-		cursor += plan.body + plan.gap
+		local cursor = inner + plan.image + plan.gap
 		stepLabel.Position = UDim2.fromOffset(inner, cursor)
 		stepLabel.Size = UDim2.fromOffset(rowWidth, plan.step)
 		stepLabel.TextSize = math.clamp(plan.step - 2, 12, 16)
@@ -207,7 +240,15 @@ function TutorialScreen.bind(root: Frame): () -> ()
 		root:SetAttribute("TutorialReplay", false)
 	end
 
+	local function loadingCover(): boolean
+		local gui = Players.LocalPlayer:FindFirstChild("PlayerGui")
+		return gui ~= nil and gui:GetAttribute("LoadingCover") == true
+	end
+
 	local function acknowledge()
+		if loadingCover() then
+			return
+		end
 		held = true
 		shown = false
 		screen.Visible = false
@@ -218,6 +259,9 @@ function TutorialScreen.bind(root: Frame): () -> ()
 
 	local function consider()
 		if held or shown or #steps == 0 then
+			return
+		end
+		if loadingCover() then
 			return
 		end
 		if root:GetAttribute("TutorialOpen") == true then
@@ -263,6 +307,7 @@ function TutorialScreen.bind(root: Frame): () -> ()
 			render()
 			applyLayout()
 		else
+			clearFigure()
 			consider()
 		end
 	end
@@ -289,7 +334,9 @@ function TutorialScreen.bind(root: Frame): () -> ()
 	end)
 
 	local stateFolder = ReplicatedStorage:WaitForChild("MatchState")
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	local connections = {
+		playerGui:GetAttributeChangedSignal("LoadingCover"):Connect(sync),
 		root:GetAttributeChangedSignal("TutorialOpen"):Connect(sync),
 		root:GetAttributeChangedSignal("SettingsOpen"):Connect(sync),
 		root:GetAttributeChangedSignal("PracticeOpen"):Connect(sync),

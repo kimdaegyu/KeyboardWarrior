@@ -46,6 +46,8 @@ export type Profile = {
 	body: string?,
 	rim: string?,
 	effect: string?,
+	effectColor: string?,
+	shopColorsMigrated: boolean?,
 	bgmVolume: number?,
 	sfxVolume: number?,
 	titles: {number}?,
@@ -59,6 +61,7 @@ export type Loadout = {
 	body: string,
 	rim: string,
 	effect: string,
+	effectColor: string,
 }
 
 export type Paint = {
@@ -70,9 +73,28 @@ export type Paint = {
 
 local ShopRules = {}
 
-local HIDDEN = {
-	starter_rim = true,
-	starter_effect = true,
+local NONE_RIM = { starter_rim = true }
+local NONE_EFFECT = { starter_effect = true }
+local NONE_COLOR = { starter_effectcolor = true }
+local STARTER_BODY_COLOR = "200;178;145"
+
+local BODY_MAP = { body_silver = "body_black" }
+local EFFECT_COLOR_MAP = {
+	effect_coral = "effectcolor_coral",
+	effect_tangerine = "effectcolor_tangerine",
+	effect_lime = "effectcolor_lime",
+	effect_jade = "effectcolor_jade",
+	effect_aqua = "effectcolor_aqua",
+	effect_sapphire = "effectcolor_sapphire",
+	effect_violet = "effectcolor_violet",
+	effect_rose = "effectcolor_rose",
+	effect_silver = "effectcolor_black",
+	effect_sun_gold = "effectcolor_sun_gold",
+}
+local REMOVED = {
+	pilot_body = true,
+	pilot_rim = true,
+	pilot_effect = true,
 }
 
 local function colorText(value: string): string?
@@ -153,6 +175,12 @@ local function copyProfile(profile: Profile): Profile
 	if type(profile.effect) == "string" then
 		updated.effect = profile.effect
 	end
+	if type(profile.effectColor) == "string" then
+		updated.effectColor = profile.effectColor
+	end
+	if profile.shopColorsMigrated == true then
+		updated.shopColorsMigrated = true
+	end
 	TitleRules.copyInto(updated, profile)
 	return updated
 end
@@ -169,7 +197,7 @@ function ShopRules.catalog(rows: {Row}): ({Item}?, string)
 			return nil, "duplicate"
 		end
 		seen[row.Id] = true
-		if row.Category ~= "Body" and row.Category ~= "Rim" and row.Category ~= "Effect" then
+		if row.Category ~= "Body" and row.Category ~= "Rim" and row.Category ~= "Effect" and row.Category ~= "EffectColor" then
 			return nil, "category"
 		end
 		local color = colorText(row.Color)
@@ -221,7 +249,7 @@ function ShopRules.catalog(rows: {Row}): ({Item}?, string)
 			preset = preset,
 		})
 	end
-	for _, category in { "Body", "Rim", "Effect" } do
+	for _, category in { "Body", "Rim", "Effect", "EffectColor" } do
 		local defaults = 0
 		for _, item in items do
 			if item.category == category and item.release == "Default" and item.enabled then
@@ -303,20 +331,34 @@ function ShopRules.loadout(items: {Item}, profile: Profile?): Loadout
 		body = chosen("body", "Body"),
 		rim = chosen("rim", "Rim"),
 		effect = chosen("effect", "Effect"),
+		effectColor = chosen("effectColor", "EffectColor"),
 	}
 end
 
-function ShopRules.preview(items: {Item}, bodyId: string, rimId: string, effectId: string): Paint
-	local function token(id: string, category: string, plain: string): (string, string)
+function ShopRules.preview(items: {Item}, bodyId: string, rimId: string, effectId: string, effectColorId: string): Paint
+	local function wornItem(id: string, category: string): Item?
 		local item = ShopRules.find(items, id)
-		if item == nil or item.category ~= category or not item.enabled or HIDDEN[item.id] then
-			return plain, ""
+		if item == nil or item.category ~= category or not item.enabled then
+			return nil
 		end
-		return item.color, item.preset
+		return item
 	end
-	local bodyColor = token(bodyId, "Body", "126;84;255")
-	local rimColor = token(rimId, "Rim", "none")
-	local effectColor, effectPreset = token(effectId, "Effect", "none")
+	local bodyItem = wornItem(bodyId, "Body")
+	local rimItem = wornItem(rimId, "Rim")
+	local effectItem = wornItem(effectId, "Effect")
+	local colorItem = wornItem(effectColorId, "EffectColor")
+	local bodyColor = if bodyItem ~= nil then bodyItem.color else STARTER_BODY_COLOR
+	local rimColor = if rimItem ~= nil and NONE_RIM[rimItem.id] ~= true then rimItem.color else "none"
+	local effectColor = "none"
+	local effectPreset = ""
+	if effectItem ~= nil and NONE_EFFECT[effectItem.id] ~= true then
+		effectPreset = effectItem.preset
+		if colorItem ~= nil and NONE_COLOR[colorItem.id] ~= true then
+			effectColor = colorItem.color
+		else
+			effectColor = effectItem.color
+		end
+	end
 	return {
 		body = bodyColor,
 		rim = rimColor,
@@ -327,7 +369,65 @@ end
 
 function ShopRules.paint(items: {Item}, profile: Profile?): Paint
 	local worn = ShopRules.loadout(items, profile)
-	return ShopRules.preview(items, worn.body, worn.rim, worn.effect)
+	return ShopRules.preview(items, worn.body, worn.rim, worn.effect, worn.effectColor)
+end
+
+function ShopRules.migrate(profile: Profile): Profile
+	if profile.shopColorsMigrated == true then
+		return profile
+	end
+	local updated = copyProfile(profile)
+	updated.shopColorsMigrated = true
+	local owned: {string} = {}
+	local seen: {[string]: boolean} = {}
+	local function add(id: string)
+		if seen[id] == true or REMOVED[id] == true then
+			return
+		end
+		seen[id] = true
+		table.insert(owned, id)
+	end
+	local grantDigits = false
+	for _, id in copyList(profile.owned) do
+		local bodyId = BODY_MAP[id]
+		local colorId = EFFECT_COLOR_MAP[id]
+		if bodyId ~= nil then
+			add(bodyId)
+		elseif colorId ~= nil then
+			add(colorId)
+			grantDigits = true
+		elseif REMOVED[id] ~= true then
+			add(id)
+		end
+	end
+	if type(profile.body) == "string" then
+		local mapped = BODY_MAP[profile.body]
+		if mapped ~= nil then
+			updated.body = mapped
+			add(mapped)
+		elseif REMOVED[profile.body] == true then
+			updated.body = nil
+		end
+	end
+	if type(profile.rim) == "string" and REMOVED[profile.rim] == true then
+		updated.rim = nil
+	end
+	if type(profile.effect) == "string" then
+		local colorId = EFFECT_COLOR_MAP[profile.effect]
+		if colorId ~= nil then
+			updated.effect = "effect_number"
+			updated.effectColor = colorId
+			add("effect_number")
+			add(colorId)
+		elseif REMOVED[profile.effect] == true then
+			updated.effect = nil
+		end
+	end
+	if grantDigits then
+		add("effect_number")
+	end
+	updated.owned = owned
+	return updated
 end
 
 function ShopRules.purchase(profile: Profile, item: Item?, inStudio: boolean): (Profile, string)
@@ -353,21 +453,16 @@ function ShopRules.equip(profile: Profile, item: Item?): (Profile, string)
 	if not ShopRules.owns(profile, item) then
 		return profile, "missing"
 	end
-	local current = if item.category == "Body" then profile.body elseif item.category == "Rim" then profile.rim else profile.effect
-	if item.category ~= "Body" and item.category ~= "Rim" and item.category ~= "Effect" then
+	local field = if item.category == "Body" then "body" elseif item.category == "Rim" then "rim" elseif item.category == "Effect" then "effect" elseif item.category == "EffectColor" then "effectColor" else nil
+	if field == nil then
 		return profile, "invalid"
 	end
+	local current = (profile :: any)[field]
 	if current == item.id then
 		return profile, "equipped"
 	end
 	local updated = copyProfile(profile)
-	if item.category == "Body" then
-		updated.body = item.id
-	elseif item.category == "Rim" then
-		updated.rim = item.id
-	else
-		updated.effect = item.id
-	end
+	;(updated :: any)[field] = item.id
 	return updated, "equipped"
 end
 
@@ -389,6 +484,7 @@ function ShopRules.selfCheck()
 		row("starter_body", "Body", "0", "Default", "126;84;255"),
 		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
 		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
+		row("starter_effectcolor", "EffectColor", "0", "Default", "0;0;0"),
 		row("pilot_body", "Body", "20", "Studio", "70;220;255"),
 		row("pilot_rim", "Rim", "30", "Studio", "255;196;64"),
 		row("pilot_effect", "Effect", "40", "Studio", "90;230;255"),
@@ -415,17 +511,18 @@ function ShopRules.selfCheck()
 	local withRim, rimReason = ShopRules.equip(worn, rim)
 	assert(rimReason == "missing" and withRim.gold == 31 and withRim.body == "pilot_body", "an unowned rim cannot be equipped")
 	local plain = ShopRules.loadout(catalog, nil)
-	assert(plain.body == "starter_body" and plain.rim == "starter_rim" and plain.effect == "starter_effect", "a profile without cosmetics uses the defaults")
+	assert(plain.body == "starter_body" and plain.rim == "starter_rim" and plain.effect == "starter_effect" and plain.effectColor == "starter_effectcolor", "a profile without cosmetics uses the defaults")
 	local saved = ShopRules.loadout(catalog, worn)
 	assert(saved.body == "pilot_body" and saved.rim == "starter_rim", "a saved body stays equipped")
-	local preview = ShopRules.preview(catalog, "pilot_body", "pilot_rim", "starter_effect")
-	local bodyOnly = ShopRules.preview(catalog, "pilot_body", "starter_rim", "starter_effect")
+	local preview = ShopRules.preview(catalog, "pilot_body", "pilot_rim", "starter_effect", "starter_effectcolor")
+	local bodyOnly = ShopRules.preview(catalog, "pilot_body", "starter_rim", "starter_effect", "starter_effectcolor")
 	assert(preview.body == "70;220;255" and preview.rim == "255;196;64" and bodyOnly.body == "70;220;255" and bodyOnly.rim == "none", "a preview changes one slot and keeps the others")
 	assert(ShopRules.paint(catalog, nil).body == "126;84;255" and ShopRules.paint(catalog, worn).body == "70;220;255", "the match uses the saved body")
 	local extra, extraReason = ShopRules.catalog({
 		row("starter_body", "Body", "0", "Default", "126;84;255"),
 		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
 		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
+		row("starter_effectcolor", "EffectColor", "0", "Default", "0;0;0"),
 		row("body_coral", "Body", "100", "Live", "248;105;100"),
 		row("rim_title_01", "Rim", "0", "Live", "233;126;107", "Achievement"),
 		row("ink_rim", "Rim", "15", "Studio", "0;0;0"),
@@ -439,29 +536,64 @@ function ShopRules.selfCheck()
 	assert(liveReason == "bought" and boughtLive.gold == 0, "a live gold pad sells outside Studio")
 	local blocked, blockedReason = ShopRules.purchase(fresh, titleRim, true)
 	assert(blockedReason == "closed" and blocked.gold == 51, "an achievement rim cannot be bought")
-	local colors = ShopRules.preview(live, "starter_body", "ink_rim", "starter_effect")
-	assert(colors.rim == "0;0;0" and colors.preset == "" and ShopRules.preview(live, "starter_body", "starter_rim", "starter_effect").rim == "none", "only the starter rim stays hidden")
+	local colors = ShopRules.preview(live, "starter_body", "ink_rim", "starter_effect", "starter_effectcolor")
+	assert(colors.rim == "0;0;0" and colors.preset == "" and ShopRules.preview(live, "starter_body", "starter_rim", "starter_effect", "starter_effectcolor").rim == "none", "only the starter rim stays hidden")
 	local digits, digitsReason = ShopRules.catalog({
-		row("starter_body", "Body", "0", "Default", "126;84;255"),
+		row("starter_body", "Body", "0", "Default", "200;178;145"),
 		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
 		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
-		row("effect_coral", "Effect", "150", "Live", "255;139;126"),
-		row("effect_sun_gold", "Effect", "2250", "Live", "255;226;114", nil, "digits"),
+		row("starter_effectcolor", "EffectColor", "0", "Default", "0;0;0"),
+		row("effect_plain", "Effect", "150", "Live", "255;139;126"),
+		row("effect_number", "Effect", "2250", "Live", "200;178;145", nil, "digits"),
+		row("effectcolor_black", "EffectColor", "1650", "Live", "0;0;0"),
+		row("effectcolor_sun_gold", "EffectColor", "2000", "Live", "219;169;48"),
 	})
 	assert(digitsReason == "ok" and digits ~= nil, "an empty preset stays on the existing effect")
 	local digitItems = digits :: {Item}
-	local goldPreview = ShopRules.preview(digitItems, "starter_body", "starter_rim", "effect_sun_gold")
-	local coralPreview = ShopRules.preview(digitItems, "starter_body", "starter_rim", "effect_coral")
-	local barePreview = ShopRules.preview(digitItems, "starter_body", "starter_rim", "starter_effect")
-	assert(goldPreview.effect == "255;226;114" and goldPreview.preset == "digits", "the golden digits preset follows the equipped effect id")
-	assert(coralPreview.effect == "255;139;126" and coralPreview.preset == "", "a blank preset keeps the existing emitter")
-	assert(barePreview.effect == "none" and barePreview.preset == "", "the default effect emits nothing")
-	local wornDigits: Profile = { schemaVersion = 1, gold = 0, exp = 0, bestScore = 0, owned = { "effect_sun_gold" }, effect = "effect_sun_gold" }
-	assert(ShopRules.paint(digitItems, wornDigits).preset == "digits" and wornDigits.effect == "effect_sun_gold", "equip still stores the product id")
+	local ownColor = ShopRules.preview(digitItems, "starter_body", "starter_rim", "effect_number", "starter_effectcolor")
+	local blackDigits = ShopRules.preview(digitItems, "starter_body", "starter_rim", "effect_number", "effectcolor_black")
+	local plainEffect = ShopRules.preview(digitItems, "starter_body", "starter_rim", "effect_plain", "starter_effectcolor")
+	local barePreview = ShopRules.preview(digitItems, "starter_body", "starter_rim", "starter_effect", "effectcolor_black")
+	local noRim = ShopRules.preview(digitItems, "starter_body", "starter_rim", "effect_number", "effectcolor_sun_gold")
+	assert(ownColor.effect == "200;178;145" and ownColor.preset == "digits", "the default color uses the equipped effect color")
+	assert(blackDigits.effect == "0;0;0" and blackDigits.preset == "digits", "a black color stays black on digits")
+	assert(plainEffect.effect == "255;139;126" and plainEffect.preset == "", "a blank preset keeps the existing emitter")
+	assert(barePreview.effect == "none" and barePreview.preset == "", "a color does not turn the effect on")
+	assert(noRim.rim == "none" and noRim.preset == "digits" and noRim.effect == "219;169;48", "digits still emit when the rim is hidden")
+	local blackItem = ShopRules.find(digitItems, "effectcolor_black") :: Item
+	local wornDigits: Profile = { schemaVersion = 1, gold = 0, exp = 0, bestScore = 0, owned = { "effect_number", "effectcolor_black" }, effect = "effect_number" }
+	local tinted, tintReason = ShopRules.equip(wornDigits, blackItem)
+	assert(tintReason == "equipped" and tinted.effect == "effect_number" and tinted.effectColor == "effectcolor_black", "a color equip leaves the effect slot")
+	assert(ShopRules.paint(digitItems, tinted).preset == "digits" and ShopRules.paint(digitItems, tinted).effect == "0;0;0", "the saved color is the digit tint")
+	local legacy: Profile = {
+		schemaVersion = 1,
+		gold = 0,
+		exp = 0,
+		bestScore = 0,
+		owned = { "body_silver", "effect_coral", "effect_silver", "effect_sun_gold", "pilot_body" },
+		body = "body_silver",
+		rim = "pilot_rim",
+		effect = "effect_sun_gold",
+	}
+	local moved = ShopRules.migrate(legacy)
+	local function has(list: {string}?, id: string): boolean
+		return type(list) == "table" and table.find(list, id) ~= nil
+	end
+	assert(moved.shopColorsMigrated == true and moved.body == "body_black" and moved.rim == nil and moved.effect == "effect_number" and moved.effectColor == "effectcolor_sun_gold", "an old gold digit loadout becomes digits plus its color")
+	assert(has(moved.owned, "body_black") and has(moved.owned, "effectcolor_coral") and has(moved.owned, "effectcolor_black") and has(moved.owned, "effectcolor_sun_gold") and has(moved.owned, "effect_number"), "old purchases move with the equipped slots")
+	assert(not has(moved.owned, "pilot_body") and not has(moved.owned, "effect_sun_gold") and not has(moved.owned, "body_silver"), "removed ids are not kept")
+	local kept = ShopRules.migrate(moved)
+	assert(kept == moved, "a second open does not migrate again")
+	moved.effectColor = "effectcolor_black"
+	assert(ShopRules.migrate(moved).effectColor == "effectcolor_black", "a later color choice is not overwritten")
+	local stored: Profile = { schemaVersion = 1, gold = 0, exp = 0, bestScore = 0, owned = { "effect_coral" }, effect = "starter_effect" }
+	local ownedOnly = ShopRules.migrate(stored)
+	assert(ownedOnly.effect == "starter_effect" and ownedOnly.effectColor == nil and has(ownedOnly.owned, "effect_number") and has(ownedOnly.owned, "effectcolor_coral"), "an owned color effect grants digits without equipping them")
 	local rejected = ShopRules.catalog({
 		row("starter_body", "Body", "0", "Default", "126;84;255"),
 		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
 		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
+		row("starter_effectcolor", "EffectColor", "0", "Default", "0;0;0"),
 		row("effect_bad", "Effect", "10", "Live", "1;2;3", nil, "missing"),
 	})
 	assert(rejected == nil, "an unknown preset is rejected")
@@ -469,6 +601,7 @@ function ShopRules.selfCheck()
 		row("starter_body", "Body", "0", "Default", "256;0;0"),
 		row("starter_rim", "Rim", "0", "Default", "0;0;0"),
 		row("starter_effect", "Effect", "0", "Default", "0;0;0"),
+		row("starter_effectcolor", "EffectColor", "0", "Default", "0;0;0"),
 	})
 	assert(badColor == nil, "a color channel above 255 is rejected")
 end

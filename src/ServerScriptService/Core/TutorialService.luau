@@ -23,19 +23,23 @@ local function remote(name: string): RemoteEvent
 	return event
 end
 
-local function payload(userId: number, saveState: string)
+local function payload(userId: number, saveState: string, serial: number?)
 	local profile = ProfileService.read(userId)
+	local reason = ProfileService.failure(userId)
 	return {
 		seen = if profile ~= nil then TutorialRules.seenOf(profile.tutorialSeen) else false,
 		saveState = saveState,
+		attempt = ProfileService.attempt(userId),
+		reason = if type(reason) == "string" then reason else "",
+		serial = serial,
 	}
 end
 
-local function push(player: Player, saveState: string)
+local function push(player: Player, saveState: string, serial: number?)
 	if stateEvent == nil or player.Parent == nil then
 		return
 	end
-	stateEvent:FireClient(player, payload(player.UserId, saveState))
+	stateEvent:FireClient(player, payload(player.UserId, saveState, serial))
 end
 
 function TutorialService.start()
@@ -51,6 +55,31 @@ function TutorialService.start()
 		if player ~= nil then
 			push(player, "ready")
 		end
+	end)
+	ProfileService.setFailedHandler(function(userId: number)
+		local player = Players:GetPlayerByUserId(userId)
+		if player ~= nil then
+			push(player, "unavailable")
+		end
+	end)
+	local retry = remote("ProfileRetry")
+	retry.OnServerEvent:Connect(function(player: Player, serial: any)
+		if typeof(serial) ~= "number" or serial ~= math.floor(serial) or serial < 1 or serial > 1000 then
+			return
+		end
+		task.spawn(function()
+			ProfileService.retry(player.UserId)
+			if player.Parent == nil then
+				return
+			end
+			if ProfileService.isOpen(player.UserId) then
+				push(player, "ready", serial)
+			elseif ProfileService.failure(player.UserId) ~= nil then
+				push(player, "unavailable", serial)
+			else
+				push(player, "loading", serial)
+			end
+		end)
 	end)
 	request.OnServerEvent:Connect(function(player: Player)
 		if ProfileService.isOpen(player.UserId) then

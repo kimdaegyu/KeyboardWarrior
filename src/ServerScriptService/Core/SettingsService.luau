@@ -72,6 +72,12 @@ function SettingsService.start()
 			push(player, "ready")
 		end
 	end)
+	ProfileService.setFailedHandler(function(userId: number)
+		local player = Players:GetPlayerByUserId(userId)
+		if player ~= nil then
+			push(player, "unavailable")
+		end
+	end)
 	request.OnServerEvent:Connect(function(player: Player)
 		if ProfileService.isOpen(player.UserId) then
 			push(player, "ready")

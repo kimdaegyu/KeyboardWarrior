@@ -45,6 +45,8 @@ export type Profile = {
 	body: string?,
 	rim: string?,
 	effect: string?,
+	effectColor: string?,
+	shopColorsMigrated: boolean?,
 	bgmVolume: number?,
 	sfxVolume: number?,
 	titles: {number}?,
@@ -227,6 +229,12 @@ function RewardRules.applyGrant(profile: Profile, settlementId: string, gold: nu
 	end
 	if type(profile.effect) == "string" then
 		updated.effect = profile.effect
+	end
+	if type(profile.effectColor) == "string" then
+		updated.effectColor = profile.effectColor
+	end
+	if profile.shopColorsMigrated == true then
+		updated.shopColorsMigrated = true
 	end
 	TitleRules.copyInto(updated, profile)
 	local fresh: {number} = {}

@@ -136,6 +136,7 @@ function SoundManager.bind(root: Frame): () -> ()
 	-- The first ready cue and the sheet-open cue must already be loaded, or they start late.
 	warm("MatchReady", 2)
 	warm("MatchStart", 1)
+	warm("MatchDoubleStart", 1)
 
 	local function trackFor(key: string): Track?
 		local row = rows[key]
